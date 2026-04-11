@@ -44,9 +44,9 @@ SentinelLink/
 
 ```
 
-## 🚀 Fase Actual: Fase 3 - Servidor WebSocket y Protocolo JSON
+## 🚀 Fase Actual: Fase 4 - Autenticacion
 
-**Objetivo**: Backend escuchando conexiones WebSocket y procesando mensajes JSON por tipo.
+**Objetivo**: Login funcional de extremo a extremo entre Flutter y backend WebSocket.
 
 ## ✅ Progreso por Fases
 
@@ -92,6 +92,19 @@ SentinelLink/
     - [x] AI_REQUEST
     - [x] AI_RESPONSE
 - [x] Validacion E2E de parseo y respuesta JSON por WebSocket
+
+### Fase 4 - Autenticacion (Completada)
+
+- [x] Backend:
+    - [x] AuthService valida credenciales contra BD
+    - [x] Gestion de sesion del cliente WebSocket conectado
+    - [x] LOGIN_RESPONSE con exito o error
+- [x] Flutter:
+    - [x] LoginScreen implementada (usuario + contrasena + boton)
+    - [x] Conexion WebSocket al pulsar login
+    - [x] Envio de LOGIN_REQUEST
+    - [x] Navegacion a ChatScreen si LOGIN_RESPONSE.success es true
+- [x] Validacion E2E completada (backend responde LOGIN_RESPONSE correcto)
 
 ### 📦 Dependencias
 
@@ -144,12 +157,18 @@ flutter pub get
 flutter run -d windows  # o macos, linux, android, ios
 ```
 
+Flujo de autenticacion en la app Flutter:
+
+- Pantalla inicial: LoginScreen
+- Credenciales de desarrollo: admin / admin123
+- Si login correcto: navegacion automatica a ChatScreen
+
 ## 📅 Roadmap de Desarrollo
 
 - **Fase 1** ✅ Estructura y configuracion
 - **Fase 2** ✅ Base de datos y modelos
 - **Fase 3** ✅ Servidor WebSocket y protocolo JSON
-- **Fase 4** Autenticacion
+- **Fase 4** ✅ Autenticacion
 - **Fase 5** Chat en tiempo real
 - **Fase 6** Monitorizacion del sistema
 - **Fase 7** Asistente IA
