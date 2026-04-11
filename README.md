@@ -44,9 +44,9 @@ SentinelLink/
 
 ```
 
-## 🚀 Fase Actual: Fase 2 - Base de Datos y Modelos
+## 🚀 Fase Actual: Fase 3 - Servidor WebSocket y Protocolo JSON
 
-**Objetivo**: Entidades JPA definidas y base de datos H2 funcionando con persistencia.
+**Objetivo**: Backend escuchando conexiones WebSocket y procesando mensajes JSON por tipo.
 
 ## ✅ Progreso por Fases
 
@@ -75,6 +75,23 @@ SentinelLink/
     - [x] Canal por defecto: general
     - [x] Usuario admin por defecto: admin
 - [x] Validacion de arranque realizada con conteos persistentes entre reinicios
+
+### Fase 3 - Servidor WebSocket y Protocolo JSON (Completada)
+
+- [x] Clase WebSocketServer implementada y escuchando en puerto 8080
+- [x] Gestion de clientes conectados con estructura concurrente
+- [x] Eventos implementados: onOpen, onMessage, onClose, onError
+- [x] Router de mensajes implementado (MessageRouter)
+- [x] Protocolo JSON definido con tipos:
+    - [x] LOGIN_REQUEST
+    - [x] LOGIN_RESPONSE
+    - [x] SEND_MESSAGE
+    - [x] RECEIVE_MESSAGE
+    - [x] USER_LIST
+    - [x] SYSTEM_ALERT
+    - [x] AI_REQUEST
+    - [x] AI_RESPONSE
+- [x] Validacion E2E de parseo y respuesta JSON por WebSocket
 
 ### 📦 Dependencias
 
@@ -113,6 +130,12 @@ Credenciales iniciales por defecto para desarrollo:
 - usuario: admin
 - contrasena: admin123
 
+Endpoint WebSocket del backend:
+
+```bash
+ws://localhost:8080/ws
+```
+
 ### Frontend
 
 ```bash
@@ -125,12 +148,25 @@ flutter run -d windows  # o macos, linux, android, ios
 
 - **Fase 1** ✅ Estructura y configuracion
 - **Fase 2** ✅ Base de datos y modelos
-- **Fase 3** Servidor WebSocket y protocolo JSON
+- **Fase 3** ✅ Servidor WebSocket y protocolo JSON
 - **Fase 4** Autenticacion
 - **Fase 5** Chat en tiempo real
 - **Fase 6** Monitorizacion del sistema
 - **Fase 7** Asistente IA
 - **Fase 8** Pulido final y pruebas
+
+## 📡 Protocolo JSON (Fase 3)
+
+```json
+{ "type": "LOGIN_REQUEST", "data": { "username": "", "password": "" } }
+{ "type": "LOGIN_RESPONSE", "data": { "success": true, "role": "user" } }
+{ "type": "SEND_MESSAGE", "data": { "channelId": 1, "content": "" } }
+{ "type": "RECEIVE_MESSAGE", "data": { "sender": "", "content": "", "timestamp": "" } }
+{ "type": "USER_LIST", "data": { "users": [] } }
+{ "type": "SYSTEM_ALERT", "data": { "message": "", "level": "warning" } }
+{ "type": "AI_REQUEST", "data": { "prompt": "" } }
+{ "type": "AI_RESPONSE", "data": { "response": "" } }
+```
 
 ## 📘 Regla de Mantenimiento del README
 

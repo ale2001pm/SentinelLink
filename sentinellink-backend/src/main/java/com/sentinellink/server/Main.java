@@ -3,6 +3,7 @@ package com.sentinellink.server;
 import com.sentinellink.service.DataBootstrapService;
 import com.sentinellink.util.H2ConsoleServer;
 import com.sentinellink.util.JpaUtil;
+import com.sentinellink.websocket.WebSocketServer;
 
 /**
  * Main entry point for SentinelLink Backend Server
@@ -11,6 +12,8 @@ public class Main {
 
     public static void main(String[] args) {
         System.out.println("SentinelLink Backend - Starting...");
+
+        WebSocketServer webSocketServer = new WebSocketServer();
 
         H2ConsoleServer.start();
 
@@ -24,9 +27,12 @@ public class Main {
         }
         System.out.println("Users in DB: " + bootstrapService.userCount());
         System.out.println("Channels in DB: " + bootstrapService.channelCount());
-        System.out.println("Backend is ready. Phase 2 - Database and models initialized.");
+
+        webSocketServer.start();
+        System.out.println("Backend is ready. Phase 3 - WebSocket and JSON protocol initialized.");
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            webSocketServer.stop();
             H2ConsoleServer.stop();
             JpaUtil.shutdown();
         }));
