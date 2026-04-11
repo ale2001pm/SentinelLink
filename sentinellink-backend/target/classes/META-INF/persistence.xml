@@ -6,23 +6,20 @@
                                  http://xmlns.jcp.org/xml/ns/persistence/persistence_2_2.xsd">
 
     <persistence-unit name="SentinelLinkPU" transaction-type="RESOURCE_LOCAL">
-        <provider>org.hibernate.jpa.HibernateJpaProvider</provider>
+        <provider>org.hibernate.jpa.HibernatePersistenceProvider</provider>
 
         <properties>
             <!-- H2 Database Configuration -->
             <property name="javax.persistence.jdbc.driver" value="org.h2.Driver"/>
-            <property name="javax.persistence.jdbc.url" value="jdbc:h2:./sentinellink_db;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE"/>
+            <property name="javax.persistence.jdbc.url" value="jdbc:h2:file:./data/sentinellink_db"/>
             <property name="javax.persistence.jdbc.user" value="sa"/>
             <property name="javax.persistence.jdbc.password" value=""/>
 
             <!-- Hibernate Configuration -->
             <property name="hibernate.dialect" value="org.hibernate.dialect.H2Dialect"/>
-            <property name="hibernate.hbm2ddl.auto" value="create-drop"/>
+            <property name="hibernate.hbm2ddl.auto" value="update"/>
             <property name="hibernate.show_sql" value="true"/>
             <property name="hibernate.format_sql" value="true"/>
-
-            <!-- H2 Console -->
-            <property name="hibernate.hbm2ddl.import_files" value=""/>
         </properties>
     </persistence-unit>
 

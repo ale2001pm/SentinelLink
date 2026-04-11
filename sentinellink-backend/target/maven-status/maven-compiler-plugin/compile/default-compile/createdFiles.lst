@@ -1,1 +1,12 @@
+com\sentinellink\repository\UserRepository.class
+com\sentinellink\model\ChannelUser.class
+com\sentinellink\model\User.class
+com\sentinellink\model\Message.class
+com\sentinellink\service\DataBootstrapService.class
 com\sentinellink\server\Main.class
+com\sentinellink\model\UserRole.class
+com\sentinellink\util\JpaUtil.class
+com\sentinellink\util\H2ConsoleServer.class
+com\sentinellink\repository\MessageRepository.class
+com\sentinellink\model\Channel.class
+com\sentinellink\repository\ChannelRepository.class

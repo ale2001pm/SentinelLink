@@ -1,81 +1,98 @@
-# 🔗 SentinelLink - Internal Communication App
+# 🔗 SentinelLink - App de Comunicacion Interna
 
-Official repository for the **SentinelLink** project - Phase 1: Project Structure & Initial Configuration
+Repositorio oficial del proyecto **SentinelLink** - Manual vivo actualizado por fases de desarrollo
 
-## 📋 Project Overview
+## 📋 Resumen del Proyecto
 
-**SentinelLink** is a complete internal communication application built as a DAM (Ciclo de Desarrollo de Aplicaciones Multiplataforma) TFG project.
+**SentinelLink** es una aplicacion completa de comunicacion interna desarrollada como TFG de DAM (Desarrollo de Aplicaciones Multiplataforma).
 
-- **Backend**: Pure Java with WebSocket + H2 Database
-- **Frontend**: Flutter (Desktop + Mobile)
-- **Communication**: WebSocket with JSON protocol
-- **Monitoring**: System metrics via OSHI
-- **AI**: Integration with external AI APIs
+- **Backend**: Java puro con WebSocket + base de datos H2
+- **Frontend**: Flutter (escritorio + movil)
+- **Comunicacion**: WebSocket con protocolo JSON
+- **Monitorizacion**: Metricas del sistema con OSHI
+- **IA**: Integracion con APIs externas
 
-## 📁 Directory Structure
+## 📁 Estructura de Directorios
 
 ```
 SentinelLink/
-├── sentinellink-backend/       # Java/Maven backend
+├── sentinellink-backend/       # Backend Java/Maven
 │   ├── src/
 │   │   ├── main/
 │   │   │   ├── java/com/sentinellink/
-│   │   │   │   ├── server/       # WebSocket server
-│   │   │   │   ├── model/        # JPA entities
-│   │   │   │   ├── service/      # Business logic
-│   │   │   │   ├── repository/   # Data access
-│   │   │   │   ├── websocket/    # WebSocket handlers
-│   │   │   │   └── util/         # Utilities
+│   │   │   │   ├── server/       # Servidor WebSocket
+│   │   │   │   ├── model/        # Entidades JPA
+│   │   │   │   ├── service/      # Logica de negocio
+│   │   │   │   ├── repository/   # Acceso a datos
+│   │   │   │   ├── websocket/    # Handlers WebSocket
+│   │   │   │   └── util/         # Utilidades
 │   │   │   └── resources/META-INF/
 │   │   │       └── persistence.xml
 │   │   └── test/
 │   └── pom.xml
 │
-└── sentinellink_frontend/       # Flutter frontend
+└── sentinellink_frontend/       # Frontend Flutter
     ├── lib/
-    │   ├── screens/             # UI screens
-    │   ├── widgets/             # Custom widgets
-    │   ├── models/              # Data models
-    │   ├── services/            # Business logic
-    │   └── main.dart            # Entry point
+    │   ├── screens/             # Pantallas UI
+    │   ├── widgets/             # Widgets personalizados
+    │   ├── models/              # Modelos de datos
+    │   ├── services/            # Logica de negocio
+    │   └── main.dart            # Punto de entrada
     ├── pubspec.yaml
     ├── analysis_options.yaml
     └── README.md
 
 ```
 
-## 🚀 Current Phase: Phase 1 - Project Initialization
+## 🚀 Fase Actual: Fase 2 - Base de Datos y Modelos
 
-**Objective**: Both projects created and running without errors.
+**Objetivo**: Entidades JPA definidas y base de datos H2 funcionando con persistencia.
 
-### ✅ Completed
+## ✅ Progreso por Fases
 
-- [x] Maven backend project created
-- [x] Dependencies configured in pom.xml (H2, Hibernate+JPA, WebSocket, OSHI)
-- [x] Package structure established
-- [x] persistence.xml configured for H2 embedded database
-- [x] Backend compiles successfully
-- [x] Flutter project structure created
-- [x] pubspec.yaml configured with required dependencies
-- [x] main.dart entry point implemented
+### Fase 1 - Inicializacion del Proyecto (Completada)
 
-### 📦 Dependencies
+- [x] Proyecto backend Maven creado
+- [x] Dependencias configuradas en pom.xml (H2, Hibernate+JPA, WebSocket, OSHI)
+- [x] Estructura de paquetes creada
+- [x] persistence.xml configurado
+- [x] Backend compila correctamente
+- [x] Estructura del proyecto Flutter creada
+- [x] pubspec.yaml configurado con dependencias requeridas
+- [x] main.dart implementado como punto de entrada
+
+### Fase 2 - Base de Datos y Modelos (Completada)
+
+- [x] Entidades JPA implementadas: User, Channel, Message, ChannelUser
+- [x] Enum UserRole creado
+- [x] Repositorios implementados:
+    - [x] UserRepository (CRUD basico + findByUsername)
+    - [x] ChannelRepository (CRUD basico + findByName)
+    - [x] MessageRepository (save, findById, findAll, findByChannelId)
+- [x] H2 configurada en modo archivo (datos persistentes)
+- [x] Consola H2 integrada en el arranque
+- [x] Datos iniciales al iniciar:
+    - [x] Canal por defecto: general
+    - [x] Usuario admin por defecto: admin
+- [x] Validacion de arranque realizada con conteos persistentes entre reinicios
+
+### 📦 Dependencias
 
 **Backend (Maven - pom.xml)**:
 - H2 Database
 - Hibernate + JPA
 - Jakarta WebSocket
-- OSHI (System Monitoring)
-- Gson (JSON Processing)
+- OSHI (Monitorizacion del sistema)
+- Gson (Procesamiento JSON)
 - SLF4J + Logback (Logging)
 
 **Frontend (Flutter - pubspec.yaml)**:
 - web_socket_channel
-- provider (State management)
-- http (Client)
+- provider (Gestion de estado)
+- http (Cliente)
 - json_serializable, json_annotation
 
-## 🔧 Quick Start
+## 🔧 Inicio Rapido
 
 ### Backend
 
@@ -85,30 +102,51 @@ mvn clean compile
 mvn exec:java
 ```
 
+Los archivos de la base de datos H2 se generan automaticamente en:
+
+```bash
+sentinellink-backend/data/
+```
+
+Credenciales iniciales por defecto para desarrollo:
+
+- usuario: admin
+- contrasena: admin123
+
 ### Frontend
 
 ```bash
 cd sentinellink_frontend
 flutter pub get
-flutter run -d windows  # or macos, linux, android, ios
+flutter run -d windows  # o macos, linux, android, ios
 ```
 
-## 📅 Development Timeline
+## 📅 Roadmap de Desarrollo
 
-- **Phase 1** ✅ Structure & Configuration
-- **Phase 2** Database & Models
-- **Phase 3** WebSocket Server & JSON Protocol
-- **Phase 4** Authentication
-- **Phase 5** Real-time Chat
-- **Phase 6** System Monitoring
-- **Phase 7** AI Assistant
-- **Phase 8** Polish & Testing
+- **Fase 1** ✅ Estructura y configuracion
+- **Fase 2** ✅ Base de datos y modelos
+- **Fase 3** Servidor WebSocket y protocolo JSON
+- **Fase 4** Autenticacion
+- **Fase 5** Chat en tiempo real
+- **Fase 6** Monitorizacion del sistema
+- **Fase 7** Asistente IA
+- **Fase 8** Pulido final y pruebas
 
-## 📝 Notes
+## 📘 Regla de Mantenimiento del README
 
-- Database persists between restarts (H2 file-based)
-- Architecture supports extensibility for future phases
-- Both projects follow best practices for their respective ecosystems
+Este README es el manual vivo del proyecto.
+
+- Al finalizar cada fase completada, actualizar:
+    - Seccion de fase actual
+    - Checklist de progreso por fases
+    - Estado del roadmap
+    - Nuevas instrucciones de ejecucion, valores por defecto o notas para usuarios
+
+## 📝 Notas
+
+- La base de datos persiste entre reinicios (H2 en archivo)
+- La arquitectura permite extender funcionalidades en las siguientes fases
+- Ambos proyectos siguen buenas practicas de sus respectivos ecosistemas
 
 ---
 
