@@ -2,12 +2,15 @@ package com.sentinellink.websocket;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.sentinellink.model.Channel;
+import com.sentinellink.model.Message;
 import com.sentinellink.service.AIService;
 import com.sentinellink.service.AuthService;
 import com.sentinellink.service.MessageService;
 import com.sentinellink.service.UserPresenceService;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 
 public class MessageRouter {
 
@@ -42,10 +45,12 @@ public class MessageRouter {
             case LOGIN_REQUEST:
                 return new RouteResult(MessageType.LOGIN_RESPONSE, authService.login(data), false);
             case SEND_MESSAGE:
+                Message savedMessage = messageService.saveChatMessage(sender, data);
                 return new RouteResult(
                         MessageType.RECEIVE_MESSAGE,
-                        messageService.createReceiveMessagePayload(sender, data),
-                        true
+                        messageService.createReceiveMessagePayload(savedMessage),
+                        true,
+                        savedMessage.getChannel().getId()
                 );
             case AI_REQUEST:
                 return new RouteResult(MessageType.AI_RESPONSE, aiService.processPrompt(data), false);
@@ -63,19 +68,37 @@ public class MessageRouter {
         return new SocketMessage(MessageType.USER_LIST, userPresenceService.buildUserList(safeUsers));
     }
 
+    public SocketMessage createChannelListMessage(Collection<Channel> channels) {
+        return new SocketMessage(MessageType.CHANNEL_LIST, messageService.createChannelListPayload(channels));
+    }
+
+    public SocketMessage createMessageHistoryMessage(Channel channel, List<Message> messages) {
+        return new SocketMessage(MessageType.MESSAGE_HISTORY, messageService.createMessageHistoryPayload(channel, messages));
+    }
+
     public String toJson(SocketMessage message) {
         return gson.toJson(message);
+    }
+
+    public MessageService getMessageService() {
+        return messageService;
     }
 
     public static class RouteResult {
         private final MessageType responseType;
         private final JsonObject responseData;
         private final boolean broadcast;
+        private final Long channelId;
 
         public RouteResult(MessageType responseType, JsonObject responseData, boolean broadcast) {
+            this(responseType, responseData, broadcast, null);
+        }
+
+        public RouteResult(MessageType responseType, JsonObject responseData, boolean broadcast, Long channelId) {
             this.responseType = responseType;
             this.responseData = responseData;
             this.broadcast = broadcast;
+            this.channelId = channelId;
         }
 
         public MessageType getResponseType() {
@@ -88,6 +111,10 @@ public class MessageRouter {
 
         public boolean isBroadcast() {
             return broadcast;
+        }
+
+        public Long getChannelId() {
+            return channelId;
         }
     }
 }

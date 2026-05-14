@@ -44,9 +44,9 @@ SentinelLink/
 
 ```
 
-## 🚀 Fase Actual: Fase 4 - Autenticacion
+## 🚀 Fase Actual: Fase 5 - Chat en tiempo real
 
-**Objetivo**: Login funcional de extremo a extremo entre Flutter y backend WebSocket.
+**Objetivo**: Mensajes funcionando entre clientes, con historial, canales y usuarios online.
 
 ## ✅ Progreso por Fases
 
@@ -106,6 +106,20 @@ SentinelLink/
     - [x] Navegacion a ChatScreen si LOGIN_RESPONSE.success es true
 - [x] Validacion E2E completada (backend responde LOGIN_RESPONSE correcto)
 
+### Fase 5 - Chat en tiempo real (Completada)
+
+- [x] Backend:
+    - [x] MessageService guarda mensajes en BD y genera historial por canal
+    - [x] Lista de usuarios online actualizada al conectar y desconectar
+    - [x] USER_LIST, CHANNEL_LIST y MESSAGE_HISTORY enviados desde WebSocket
+    - [x] SEND_MESSAGE retransmitido solo a clientes del canal activo
+- [x] Flutter:
+    - [x] ChatScreen con sidebar de canales y usuarios online
+    - [x] Historial de mensajes por canal
+    - [x] Input para escribir y enviar mensajes
+    - [x] Recepcion en tiempo real por WebSocket
+- [x] Validacion funcional completada con dos clientes simultaneos
+
 ### 📦 Dependencias
 
 **Backend (Maven - pom.xml)**:
@@ -143,6 +157,11 @@ Credenciales iniciales por defecto para desarrollo:
 - usuario: admin
 - contrasena: admin123
 
+Usuario adicional para pruebas de chat simultaneo:
+
+- usuario: user
+- contrasena: user123
+
 Endpoint WebSocket del backend:
 
 ```bash
@@ -169,7 +188,7 @@ Flujo de autenticacion en la app Flutter:
 - **Fase 2** ✅ Base de datos y modelos
 - **Fase 3** ✅ Servidor WebSocket y protocolo JSON
 - **Fase 4** ✅ Autenticacion
-- **Fase 5** Chat en tiempo real
+- **Fase 5** ✅ Chat en tiempo real
 - **Fase 6** Monitorizacion del sistema
 - **Fase 7** Asistente IA
 - **Fase 8** Pulido final y pruebas

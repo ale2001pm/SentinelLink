@@ -19,6 +19,7 @@ public class DataBootstrapService {
     public void seedDefaults() {
         ensureDefaultChannel();
         ensureDefaultAdmin();
+        ensureDefaultUser();
     }
 
     private void ensureDefaultChannel() {
@@ -32,6 +33,13 @@ public class DataBootstrapService {
         userRepository.findByUsername("admin").orElseGet(() -> {
             User admin = new User("admin", "admin123", UserRole.ADMIN, false);
             return userRepository.save(admin);
+        });
+    }
+
+    private void ensureDefaultUser() {
+        userRepository.findByUsername("user").orElseGet(() -> {
+            User user = new User("user", "user123", UserRole.USER, false);
+            return userRepository.save(user);
         });
     }
 

@@ -25,8 +25,8 @@ class WebSocketService {
     _subscription = _channel!.stream.listen(
       (dynamic raw) {
         final dynamic decoded = jsonDecode(raw.toString());
-        if (decoded is Map<String, dynamic>) {
-          _messagesController.add(SocketMessage.fromJson(decoded));
+        if (decoded is Map) {
+          _messagesController.add(SocketMessage.fromJson(Map<String, dynamic>.from(decoded)));
         }
       },
       onError: (Object error) {
