@@ -44,9 +44,9 @@ SentinelLink/
 
 ```
 
-## 🚀 Fase Actual: Fase 5 - Chat en tiempo real
+## 🚀 Fase Actual: Fase 6 - Monitorizacion del sistema
 
-**Objetivo**: Mensajes funcionando entre clientes, con historial, canales y usuarios online.
+**Objetivo**: Monitorización en tiempo real de CPU, RAM y Disco con alertas automáticas.
 
 ## ✅ Progreso por Fases
 
@@ -120,6 +120,25 @@ SentinelLink/
     - [x] Recepcion en tiempo real por WebSocket
 - [x] Validacion funcional completada con dos clientes simultaneos
 
+### Fase 6 - Monitorizacion del Sistema (Completada)
+
+- [x] Backend:
+    - [x] SystemMonitor con recolección periódica de métricas (CPU, RAM, Disco) via OSHI
+    - [x] Broadcast de SYSTEM_METRICS cada intervalo configurable
+    - [x] Alertas automáticas cuando métricas superan umbrales
+    - [x] Persistencia de últimas métricas y alertas para nuevas sesiones
+    - [x] Propiedades JVM configurables para umbrales e intervalos
+- [x] Frontend:
+    - [x] MonitorScreen con visualización de barras de progreso por métrica
+    - [x] AuthProvider maneja SYSTEM_METRICS y SYSTEM_ALERT en tiempo real
+    - [x] SnackBars automáticas al recibir alertas del sistema
+    - [x] Navegación desde ChatScreen al Monitor (appbar + drawer)
+- [x] Protocolo:
+    - [x] MessageType.SYSTEM_METRICS agregado
+    - [x] Payloads de métricas: cpuPercent, ramPercent, diskPercent, timestamp
+    - [x] Payloads de alertas: message, level, metric, value, threshold
+- [x] Validacion E2E completada: metrics + alerts fluyendo en WebSocket
+
 ### 📦 Dependencias
 
 **Backend (Maven - pom.xml)**:
@@ -146,10 +165,27 @@ mvn clean compile
 mvn exec:java
 ```
 
-Los archivos de la base de datos H2 se generan automaticamente en:
+Los archivos de la base de datos H2 se generan automáticamente en:
 
 ```bash
 sentinellink-backend/data/
+```
+
+**Nota**: La aplicación maneja automáticamente bloqueos de BD con reintentos inteligentes. No necesitas eliminar ninguna carpeta manualmente.
+
+**Configuración del Monitor** (Fase 6):
+
+Puedes controlar el monitor via propiedades JVM. Por defecto:
+- CPU threshold: 80%
+- RAM threshold: 90%
+- Disk threshold: 90%
+- Intervalo: 5 segundos
+
+Para sobrescribir:
+
+```bash
+set JAVA_TOOL_OPTIONS=-Dsentinellink.monitor.cpuThreshold=75 -Dsentinellink.monitor.ramThreshold=85
+mvn exec:java
 ```
 
 Credenciales iniciales por defecto para desarrollo:
@@ -189,11 +225,11 @@ Flujo de autenticacion en la app Flutter:
 - **Fase 3** ✅ Servidor WebSocket y protocolo JSON
 - **Fase 4** ✅ Autenticacion
 - **Fase 5** ✅ Chat en tiempo real
-- **Fase 6** Monitorizacion del sistema
+- **Fase 6** ✅ Monitorizacion del sistema
 - **Fase 7** Asistente IA
 - **Fase 8** Pulido final y pruebas
 
-## 📡 Protocolo JSON (Fase 3)
+## 📋 Protocolo JSON (Fase 3 - Actualizado Fase 6)
 
 ```json
 { "type": "LOGIN_REQUEST", "data": { "username": "", "password": "" } }
@@ -201,7 +237,10 @@ Flujo de autenticacion en la app Flutter:
 { "type": "SEND_MESSAGE", "data": { "channelId": 1, "content": "" } }
 { "type": "RECEIVE_MESSAGE", "data": { "sender": "", "content": "", "timestamp": "" } }
 { "type": "USER_LIST", "data": { "users": [] } }
-{ "type": "SYSTEM_ALERT", "data": { "message": "", "level": "warning" } }
+{ "type": "CHANNEL_LIST", "data": { "channels": [] } }
+{ "type": "MESSAGE_HISTORY", "data": { "channelId": 1, "messages": [] } }
+{ "type": "SYSTEM_METRICS", "data": { "cpuPercent": 25.5, "ramPercent": 60.2, "diskPercent": 45.0, "timestamp": 1778931858090 } }
+{ "type": "SYSTEM_ALERT", "data": { "message": "", "level": "warning", "metric": "cpu", "value": 85.0, "threshold": 80.0, "timestamp": 1778931858090 } }
 { "type": "AI_REQUEST", "data": { "prompt": "" } }
 { "type": "AI_RESPONSE", "data": { "response": "" } }
 ```

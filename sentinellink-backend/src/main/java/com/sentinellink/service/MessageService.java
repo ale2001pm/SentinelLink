@@ -101,6 +101,31 @@ public class MessageService {
         return alert;
     }
 
+    public JsonObject createSystemMetricsPayload(double cpuPercent,
+                                                 double ramPercent,
+                                                 double diskPercent,
+                                                 long timestamp) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("cpuPercent", cpuPercent);
+        payload.addProperty("ramPercent", ramPercent);
+        payload.addProperty("diskPercent", diskPercent);
+        payload.addProperty("timestamp", timestamp);
+        return payload;
+    }
+
+    public JsonObject createSystemAlert(String message,
+                                        String level,
+                                        String metric,
+                                        double value,
+                                        double threshold) {
+        JsonObject alert = createSystemAlert(message, level);
+        alert.addProperty("metric", metric);
+        alert.addProperty("value", value);
+        alert.addProperty("threshold", threshold);
+        alert.addProperty("timestamp", System.currentTimeMillis());
+        return alert;
+    }
+
     private Channel resolveChannel(JsonObject sendData) {
         Long channelId = getLongOrNull(sendData, "channelId");
         if (channelId != null) {

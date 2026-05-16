@@ -1,6 +1,7 @@
 package com.sentinellink.websocket;
 
 import com.sentinellink.model.Channel;
+import com.sentinellink.service.SystemMonitor;
 import jakarta.websocket.Session;
 import java.io.IOException;
 import java.util.List;
@@ -44,6 +45,8 @@ public class WebSocketServer {
         CONNECTED_CLIENTS.add(session);
         sendChannelListToAll();
         sendUserListToAll();
+        sendLatestMetricsToSession(session);
+        sendLatestAlertToSession(session);
     }
 
     public static void onMessage(Session session, String rawMessage) {
@@ -119,6 +122,10 @@ public class WebSocketServer {
         }
     }
 
+    public static void broadcast(SocketMessage message) {
+        sendToAll(message);
+    }
+
     private static void sendUserListToAll() {
         SocketMessage userList = ROUTER.createUserListMessage(SESSION_USERNAMES.values());
         sendToAll(userList);
@@ -127,6 +134,20 @@ public class WebSocketServer {
     private static void sendChannelListToAll() {
         SocketMessage channelList = ROUTER.createChannelListMessage(ROUTER.getMessageService().findAllChannels());
         sendToAll(channelList);
+    }
+
+    private static void sendLatestMetricsToSession(Session session) {
+        SocketMessage latestMetrics = SystemMonitor.getLatestMetricsMessage();
+        if (latestMetrics != null) {
+            sendToSession(session, latestMetrics);
+        }
+    }
+
+    private static void sendLatestAlertToSession(Session session) {
+        SocketMessage latestAlert = SystemMonitor.getLatestAlertMessage();
+        if (latestAlert != null) {
+            sendToSession(session, latestAlert);
+        }
     }
 
     private static void handleJoinChannel(Session session, SocketMessage incoming) {

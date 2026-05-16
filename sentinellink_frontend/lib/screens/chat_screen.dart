@@ -5,6 +5,7 @@ import '../models/chat_channel.dart';
 import '../models/chat_message.dart';
 import '../services/auth_provider.dart';
 import 'login_screen.dart';
+import 'monitor_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -16,6 +17,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  int _lastAlertVersion = 0;
 
   @override
   void dispose() {
@@ -34,15 +36,51 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.clear();
   }
 
+  void _openMonitor(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<MonitorScreen>(
+        builder: (BuildContext context) => const MonitorScreen(),
+      ),
+    );
+  }
+
+  void _showSystemAlertIfNeeded(AuthProvider auth) {
+    if (auth.systemAlertVersion == _lastAlertVersion) {
+      return;
+    }
+    _lastAlertVersion = auth.systemAlertVersion;
+    final String? alert = auth.systemAlertMessage;
+    if (alert == null || alert.isEmpty) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(alert),
+          backgroundColor: Colors.orange.shade700,
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final AuthProvider auth = context.watch<AuthProvider>();
+    _showSystemAlertIfNeeded(auth);
     final bool wideLayout = MediaQuery.of(context).size.width >= 900;
 
     return Scaffold(
       appBar: AppBar(
         title: Text('SentinelLink - ${auth.selectedChannel?.name ?? 'Chat'}'),
         actions: <Widget>[
+          IconButton(
+            tooltip: 'Monitor',
+            onPressed: () => _openMonitor(context),
+            icon: const Icon(Icons.monitor_heart_outlined),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Center(
@@ -68,7 +106,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      drawer: wideLayout ? null : Drawer(child: _Sidebar(auth: auth)),
+      drawer: wideLayout ? null : Drawer(child: _Sidebar(auth: auth, onOpenMonitor: () => _openMonitor(context))),
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final Widget chatArea = _ChatPanel(
@@ -81,7 +119,7 @@ class _ChatScreenState extends State<ChatScreen> {
           if (wideLayout) {
             return Row(
               children: <Widget>[
-                SizedBox(width: 320, child: _Sidebar(auth: auth)),
+                SizedBox(width: 320, child: _Sidebar(auth: auth, onOpenMonitor: () => _openMonitor(context))),
                 const VerticalDivider(width: 1),
                 Expanded(child: chatArea),
               ],
@@ -96,9 +134,10 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.auth});
+  const _Sidebar({required this.auth, required this.onOpenMonitor});
 
   final AuthProvider auth;
+  final VoidCallback onOpenMonitor;
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +145,15 @@ class _Sidebar extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.monitor_heart_outlined),
+              title: const Text('Monitor del sistema'),
+              subtitle: const Text('CPU, RAM, Disco y alertas'),
+              onTap: onOpenMonitor,
+            ),
+          ),
+          const SizedBox(height: 12),
           const Text('Canales', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           if (auth.channels.isEmpty)

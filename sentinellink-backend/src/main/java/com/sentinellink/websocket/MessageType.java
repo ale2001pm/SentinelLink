@@ -9,6 +9,7 @@ public enum MessageType {
     SEND_MESSAGE,
     RECEIVE_MESSAGE,
     USER_LIST,
+    SYSTEM_METRICS,
     SYSTEM_ALERT,
     AI_REQUEST,
     AI_RESPONSE,

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/chat_channel.dart';
 import '../models/chat_message.dart';
 import '../models/socket_message.dart';
+import '../models/system_metrics.dart';
 import 'websocket_service.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -22,11 +23,18 @@ class AuthProvider extends ChangeNotifier {
   final List<ChatChannel> channels = <ChatChannel>[];
   final List<String> onlineUsers = <String>[];
   final Map<int, List<ChatMessage>> _messagesByChannel = <int, List<ChatMessage>>{};
+  SystemMetrics? _currentMetrics;
+  String? _systemAlertMessage;
+  int _systemAlertVersion = 0;
 
   int? selectedChannelId;
   Completer<bool>? _loginCompleter;
 
   String webSocketUrl = 'ws://localhost:8080/ws';
+
+  SystemMetrics? get currentMetrics => _currentMetrics;
+  String? get systemAlertMessage => _systemAlertMessage;
+  int get systemAlertVersion => _systemAlertVersion;
 
   List<ChatMessage> get selectedMessages {
     final int? channelId = selectedChannelId;
@@ -105,6 +113,9 @@ class AuthProvider extends ChangeNotifier {
     channels.clear();
     onlineUsers.clear();
     _messagesByChannel.clear();
+    _currentMetrics = null;
+    _systemAlertMessage = null;
+    _systemAlertVersion = 0;
     notifyListeners();
   }
 
@@ -187,8 +198,14 @@ class AuthProvider extends ChangeNotifier {
         _messagesByChannel.putIfAbsent(message.channelId, () => <ChatMessage>[]).add(message);
         selectedChannelId ??= message.channelId;
         break;
-      case 'ERROR':
+      case 'SYSTEM_METRICS':
+        _currentMetrics = SystemMetrics.fromJson(msg.data);
+        break;
       case 'SYSTEM_ALERT':
+        _systemAlertMessage = (msg.data['message'] ?? '').toString();
+        _systemAlertVersion++;
+        break;
+      case 'ERROR':
         errorMessage = (msg.data['message'] ?? 'Se ha producido un error').toString();
         break;
       default:
