@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/chat_channel.dart';
 import '../models/chat_message.dart';
 import '../services/auth_provider.dart';
+import 'ai_screen.dart';
 import 'login_screen.dart';
 import 'monitor_screen.dart';
 
@@ -44,6 +45,14 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _openAssistant(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<AIScreen>(
+        builder: (BuildContext context) => const AIScreen(),
+      ),
+    );
+  }
+
   void _showSystemAlertIfNeeded(AuthProvider auth) {
     if (auth.systemAlertVersion == _lastAlertVersion) {
       return;
@@ -77,6 +86,11 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Text('SentinelLink - ${auth.selectedChannel?.name ?? 'Chat'}'),
         actions: <Widget>[
           IconButton(
+            tooltip: 'Asistente IA',
+            onPressed: () => _openAssistant(context),
+            icon: const Icon(Icons.smart_toy_outlined),
+          ),
+          IconButton(
             tooltip: 'Monitor',
             onPressed: () => _openMonitor(context),
             icon: const Icon(Icons.monitor_heart_outlined),
@@ -106,7 +120,15 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      drawer: wideLayout ? null : Drawer(child: _Sidebar(auth: auth, onOpenMonitor: () => _openMonitor(context))),
+      drawer: wideLayout
+          ? null
+          : Drawer(
+              child: _Sidebar(
+                auth: auth,
+                onOpenMonitor: () => _openMonitor(context),
+                onOpenAssistant: () => _openAssistant(context),
+              ),
+            ),
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final Widget chatArea = _ChatPanel(
@@ -119,7 +141,14 @@ class _ChatScreenState extends State<ChatScreen> {
           if (wideLayout) {
             return Row(
               children: <Widget>[
-                SizedBox(width: 320, child: _Sidebar(auth: auth, onOpenMonitor: () => _openMonitor(context))),
+                SizedBox(
+                  width: 320,
+                  child: _Sidebar(
+                    auth: auth,
+                    onOpenMonitor: () => _openMonitor(context),
+                    onOpenAssistant: () => _openAssistant(context),
+                  ),
+                ),
                 const VerticalDivider(width: 1),
                 Expanded(child: chatArea),
               ],
@@ -134,10 +163,15 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.auth, required this.onOpenMonitor});
+  const _Sidebar({
+    required this.auth,
+    required this.onOpenMonitor,
+    required this.onOpenAssistant,
+  });
 
   final AuthProvider auth;
   final VoidCallback onOpenMonitor;
+  final VoidCallback onOpenAssistant;
 
   @override
   Widget build(BuildContext context) {
@@ -151,6 +185,15 @@ class _Sidebar extends StatelessWidget {
               title: const Text('Monitor del sistema'),
               subtitle: const Text('CPU, RAM, Disco y alertas'),
               onTap: onOpenMonitor,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.smart_toy_outlined),
+              title: const Text('Asistente IA'),
+              subtitle: const Text('Chat con IA integrado'),
+              onTap: onOpenAssistant,
             ),
           ),
           const SizedBox(height: 12),

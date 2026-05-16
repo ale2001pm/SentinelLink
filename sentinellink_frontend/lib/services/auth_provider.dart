@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/ai_message.dart';
 import '../models/chat_channel.dart';
 import '../models/chat_message.dart';
 import '../models/socket_message.dart';
@@ -26,6 +27,8 @@ class AuthProvider extends ChangeNotifier {
   SystemMetrics? _currentMetrics;
   String? _systemAlertMessage;
   int _systemAlertVersion = 0;
+  final List<AiMessage> _aiMessages = <AiMessage>[];
+  bool _isAiLoading = false;
 
   int? selectedChannelId;
   Completer<bool>? _loginCompleter;
@@ -35,6 +38,9 @@ class AuthProvider extends ChangeNotifier {
   SystemMetrics? get currentMetrics => _currentMetrics;
   String? get systemAlertMessage => _systemAlertMessage;
   int get systemAlertVersion => _systemAlertVersion;
+  bool get isAiLoading => _isAiLoading;
+
+  List<AiMessage> get aiMessages => List<AiMessage>.unmodifiable(_aiMessages);
 
   List<ChatMessage> get selectedMessages {
     final int? channelId = selectedChannelId;
@@ -116,6 +122,8 @@ class AuthProvider extends ChangeNotifier {
     _currentMetrics = null;
     _systemAlertMessage = null;
     _systemAlertVersion = 0;
+    _aiMessages.clear();
+    _isAiLoading = false;
     notifyListeners();
   }
 
@@ -152,6 +160,39 @@ class AuthProvider extends ChangeNotifier {
         data: <String, dynamic>{
           'content': trimmed,
           'channelId': channelId,
+        },
+      ),
+    );
+  }
+
+  Future<void> sendAiPrompt(String prompt) async {
+    final String trimmed = prompt.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+
+    if (!_webSocketService.isConnected) {
+      errorMessage = 'WebSocket no conectado';
+      notifyListeners();
+      return;
+    }
+
+    _aiMessages.add(
+      AiMessage(
+        role: 'user',
+        content: trimmed,
+        timestamp: DateTime.now(),
+      ),
+    );
+    _isAiLoading = true;
+    notifyListeners();
+
+    _webSocketService.send(
+      SocketMessage(
+        type: 'AI_REQUEST',
+        data: <String, dynamic>{
+          'prompt': trimmed,
+          'history': _buildAiHistoryPayload(),
         },
       ),
     );
@@ -205,14 +246,52 @@ class AuthProvider extends ChangeNotifier {
         _systemAlertMessage = (msg.data['message'] ?? '').toString();
         _systemAlertVersion++;
         break;
+      case 'AI_RESPONSE':
+        String response = (msg.data['response'] ?? '').toString();
+        if (response.isEmpty) {
+          response = 'Respuesta vacia de la IA';
+        }
+        _aiMessages.add(
+          AiMessage(
+            role: 'assistant',
+            content: response,
+            timestamp: DateTime.now(),
+          ),
+        );
+        _isAiLoading = false;
+        if (msg.data['error'] == true) {
+          errorMessage = response;
+        }
+        break;
       case 'ERROR':
         errorMessage = (msg.data['message'] ?? 'Se ha producido un error').toString();
+        if (_isAiLoading) {
+          _aiMessages.add(
+            AiMessage(
+              role: 'assistant',
+              content: errorMessage ?? 'Se ha producido un error',
+              timestamp: DateTime.now(),
+            ),
+          );
+          _isAiLoading = false;
+        }
         break;
       default:
         break;
     }
 
     notifyListeners();
+  }
+
+  List<Map<String, String>> _buildAiHistoryPayload() {
+    final int start = _aiMessages.length > 12 ? _aiMessages.length - 12 : 0;
+    return _aiMessages
+        .sublist(start)
+        .map((AiMessage msg) => <String, String>{
+              'role': msg.role,
+              'content': msg.content,
+            })
+        .toList();
   }
 
   List<String> _readStringList(dynamic rawUsers) {

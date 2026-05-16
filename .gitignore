@@ -1,0 +1,13 @@
+# Backend runtime artifacts
+sentinellink-backend/data/
+sentinellink-backend/target/
+sentinellink-backend/.env
+
+# H2 local database files (safety net)
+*.mv.db
+*.trace.db
+*.lock.db
+
+# OS / tooling
+.DS_Store
+Thumbs.db

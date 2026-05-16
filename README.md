@@ -165,6 +165,32 @@ mvn clean compile
 mvn exec:java
 ```
 
+Para el Asistente IA (Fase 7) con Ollama (gratis), crea el archivo:
+
+```bash
+sentinellink-backend/.env
+```
+
+Con estas variables:
+
+```bash
+USE_OLLAMA=true
+OLLAMA_MODEL=llama3.1
+OLLAMA_API_URL=http://localhost:11434/api/chat
+```
+
+Instala Ollama y descarga el modelo:
+
+```bash
+ollama pull llama3.1
+```
+
+Si Ollama no esta corriendo, inicia:
+
+```bash
+ollama serve
+```
+
 Los archivos de la base de datos H2 se generan automáticamente en:
 
 ```bash
