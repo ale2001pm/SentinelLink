@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/auth_provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/theme_controller.dart';
 
 class MonitorScreen extends StatefulWidget {
   const MonitorScreen({super.key});
@@ -69,6 +70,13 @@ class _MonitorScreenState extends State<MonitorScreen> {
       appBar: AppBar(
         title: const Text('Monitor del Sistema'),
         centerTitle: true,
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Cambiar tema',
+            onPressed: () => context.read<ThemeController>().toggle(),
+            icon: const Icon(Icons.brightness_6_outlined),
+          ),
+        ],
       ),
       body: SafeArea(
         child: CustomScrollView(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -265,6 +266,9 @@ class AuthProvider extends ChangeNotifier {
         break;
       case 'ERROR':
         errorMessage = (msg.data['message'] ?? 'Se ha producido un error').toString();
+        if ((errorMessage ?? '').toLowerCase().contains('conexion perdida')) {
+          isLoggedIn = false;
+        }
         if (_isAiLoading) {
           _aiMessages.add(
             AiMessage(
@@ -281,6 +285,48 @@ class AuthProvider extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  Future<String> exportSelectedChannelToXml() async {
+    final ChatChannel? channel = selectedChannel;
+    final List<ChatMessage> messages = selectedMessages;
+    if (channel == null || messages.isEmpty) {
+      throw StateError('No hay mensajes para exportar');
+    }
+
+    final String safeChannel = _sanitizeFileName(channel.name);
+    final String timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+    final String fileName = 'sentinellink_chat_${safeChannel}_$timestamp.xml';
+    final String path = '${Directory.current.path}${Platform.pathSeparator}$fileName';
+
+    final StringBuffer buffer = StringBuffer();
+    buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
+    buffer.writeln('<chat channel="${_escapeXml(channel.name)}">');
+    for (final ChatMessage message in messages) {
+      buffer.writeln('  <message>');
+      buffer.writeln('    <sender>${_escapeXml(message.sender)}</sender>');
+      buffer.writeln('    <content>${_escapeXml(message.content)}</content>');
+      buffer.writeln('    <timestamp>${message.timestamp.toIso8601String()}</timestamp>');
+      buffer.writeln('  </message>');
+    }
+    buffer.writeln('</chat>');
+
+    final File file = File(path);
+    await file.writeAsString(buffer.toString());
+    return path;
+  }
+
+  String _escapeXml(String input) {
+    return input
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&apos;');
+  }
+
+  String _sanitizeFileName(String input) {
+    return input.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
   }
 
   List<Map<String, String>> _buildAiHistoryPayload() {

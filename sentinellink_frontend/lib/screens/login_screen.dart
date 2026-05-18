@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_provider.dart';
+import '../theme/app_theme.dart';
+import '../theme/theme_controller.dart';
 import 'chat_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -49,74 +51,115 @@ class _LoginScreenState extends State<LoginScreen> {
     return Consumer<AuthProvider>(
       builder: (BuildContext context, AuthProvider auth, Widget? child) {
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('SentinelLink - Login'),
-          ),
-          body: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    const Text(
-                      'Acceso a SentinelLink',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+          body: Stack(
+            children: <Widget>[
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: <Widget>[
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryOrange,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.apartment,
+                                    color: AppTheme.primaryOrangeForeground,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'SentinelLink',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              'Accede a tu cuenta',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium,
+                            ),
+                            const SizedBox(height: 20),
+                            TextField(
+                              controller: _usernameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Usuario',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _passwordController,
+                              obscureText: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Contrasena',
+                                prefixIcon: Icon(Icons.lock_outline),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: auth.isLoading
+                                    ? null
+                                    : () => _handleLogin(context),
+                                child: auth.isLoading
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : const Text('Iniciar sesion'),
+                              ),
+                            ),
+                            if (auth.errorMessage != null) ...<Widget>[
+                              const SizedBox(height: 12),
+                              Text(
+                                auth.errorMessage!,
+                                style: const TextStyle(color: AppTheme.critical),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                            const SizedBox(height: 14),
+                            Text(
+                              'Por defecto: admin / admin123',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: _usernameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Usuario',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Contrasena',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: auth.isLoading
-                            ? null
-                            : () => _handleLogin(context),
-                        child: auth.isLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Iniciar sesion'),
-                      ),
-                    ),
-                    if (auth.errorMessage != null) ...<Widget>[
-                      const SizedBox(height: 12),
-                      Text(
-                        auth.errorMessage!,
-                        style: const TextStyle(color: Colors.red),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Por defecto: admin / admin123',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+              Positioned(
+                top: 16,
+                right: 16,
+                child: IconButton(
+                  tooltip: 'Cambiar tema',
+                  onPressed: () => context.read<ThemeController>().toggle(),
+                  icon: const Icon(Icons.brightness_6_outlined),
+                ),
+              ),
+            ],
           ),
         );
       },

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/ai_message.dart';
 import '../services/auth_provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/theme_controller.dart';
 
 class AIScreen extends StatefulWidget {
   const AIScreen({super.key});
@@ -76,6 +77,13 @@ class _AIScreenState extends State<AIScreen> {
           ],
         ),
         centerTitle: false,
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Cambiar tema',
+            onPressed: () => context.read<ThemeController>().toggle(),
+            icon: const Icon(Icons.brightness_6_outlined),
+          ),
+        ],
       ),
       body: Column(
         children: <Widget>[

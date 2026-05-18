@@ -39,6 +39,14 @@ class WebSocketService {
       },
       onDone: () {
         _channel = null;
+        _messagesController.add(
+          SocketMessage(
+            type: 'ERROR',
+            data: <String, dynamic>{
+              'message': 'Conexion perdida. Vuelve a iniciar sesion.',
+            },
+          ),
+        );
       },
       cancelOnError: false,
     );

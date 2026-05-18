@@ -5,6 +5,7 @@ import '../models/chat_channel.dart';
 import '../models/chat_message.dart';
 import '../services/auth_provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/theme_controller.dart';
 import 'ai_screen.dart';
 import 'login_screen.dart';
 import 'monitor_screen.dart';
@@ -88,6 +89,29 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _showInfoSnackBar(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.primaryOrange,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Future<void> _exportChat(BuildContext context) async {
+    try {
+      final String path = await context.read<AuthProvider>().exportSelectedChannelToXml();
+      if (!mounted) return;
+      _showInfoSnackBar(context, 'Chat exportado en: $path');
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar(context, 'No se pudo exportar: $e');
+    }
+  }
+
   Future<void> _handleLogout(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -128,6 +152,31 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Row(
           children: <Widget>[
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppTheme.primaryOrange,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.apartment,
+                color: AppTheme.primaryOrangeForeground,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'SentinelLink',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 1,
+              height: 20,
+              color: Theme.of(context).dividerColor,
+            ),
+            const SizedBox(width: 12),
             Icon(
               auth.selectedChannel?.isPrivate == true
                   ? Icons.lock_outline
@@ -143,6 +192,16 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: <Widget>[
+          IconButton(
+            tooltip: 'Exportar chat a XML',
+            onPressed: () => _exportChat(context),
+            icon: const Icon(Icons.download_outlined),
+          ),
+          IconButton(
+            tooltip: 'Cambiar tema',
+            onPressed: () => context.read<ThemeController>().toggle(),
+            icon: const Icon(Icons.brightness_6_outlined),
+          ),
           IconButton(
             tooltip: 'Asistente IA',
             onPressed: () => _openAssistant(context),

@@ -44,7 +44,7 @@ SentinelLink/
 
 ```
 
-## � Fase Actual: Fase 6 - Monitorizacion del sistema
+## Fase Actual: Fase 8 - Pulido final y pruebas
 
 **Objetivo**: Monitorización en tiempo real de CPU, RAM y Disco con alertas automáticas.
 
@@ -139,6 +139,21 @@ SentinelLink/
     - [x] Payloads de alertas: message, level, metric, value, threshold
 - [x] Validacion E2E completada: metrics + alerts fluyendo en WebSocket
 
+### Fase 7 - Asistente IA (Completada)
+
+- [x] Backend con Ollama local (llama3.1) integrado
+- [x] Panel de Asistente IA con historial de conversacion
+- [x] Manejo de errores de IA y mensaje de instalacion si falta Ollama
+
+### Fase 8 - Pulido final y pruebas (Completada)
+
+- [x] Estetica basada en Figma (colores, layout, cards, sidebar y topbar)
+- [x] Dark mode con alternancia de tema
+- [x] Manejo de errores de conexion y credenciales
+- [x] Exportacion de chat a XML (desde la barra superior)
+- [x] Pruebas con multiples clientes simultaneos
+- [x] Documentacion actualizada
+
 ### 📦 Dependencias
 
 **Backend (Maven - pom.xml)**:
@@ -155,7 +170,7 @@ SentinelLink/
 - http (Cliente)
 - json_serializable, json_annotation
 
-## � Inicio Rapido
+## Inicio Rapido
 
 ### Backend
 
@@ -230,6 +245,11 @@ Endpoint WebSocket del backend:
 ws://localhost:8080/ws
 ```
 
+Exportacion de chat a XML:
+
+- Desde el chat, pulsa el icono de descarga en la barra superior.
+- El archivo se guarda en el directorio actual de ejecucion.
+
 ### Frontend
 
 ```bash
@@ -252,10 +272,10 @@ Flujo de autenticacion en la app Flutter:
 - **Fase 4** ✅ Autenticacion
 - **Fase 5** ✅ Chat en tiempo real
 - **Fase 6** ✅ Monitorizacion del sistema
-- **Fase 7** Asistente IA
-- **Fase 8** Pulido final y pruebas
+- **Fase 7** ✅ Asistente IA
+- **Fase 8** ✅ Pulido final y pruebas
 
-## � Protocolo JSON (Fase 3 - Actualizado Fase 6)
+## Protocolo JSON (Fase 3 - Actualizado Fase 6)
 
 ```json
 { "type": "LOGIN_REQUEST", "data": { "username": "", "password": "" } }
@@ -281,7 +301,7 @@ Este README es el manual vivo del proyecto.
     - Estado del roadmap
     - Nuevas instrucciones de ejecucion, valores por defecto o notas para usuarios
 
-## � Notas
+## Notas
 
 - La base de datos persiste entre reinicios (H2 en archivo)
 - La arquitectura permite extender funcionalidades en las siguientes fases

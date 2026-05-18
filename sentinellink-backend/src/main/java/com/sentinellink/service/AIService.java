@@ -167,9 +167,9 @@ public class AIService {
             return result;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return errorResponse("Error llamando a Ollama: " + e.getMessage());
+            return errorResponse(buildOllamaMissingMessage());
         } catch (IOException e) {
-            return errorResponse("Error llamando a Ollama: " + e.getMessage());
+            return errorResponse(buildOllamaMissingMessage());
         } catch (Exception e) {
             return errorResponse("Error inesperado: " + e.getMessage());
         }
@@ -195,20 +195,6 @@ public class AIService {
             return parsed.get("response").getAsString();
         }
         return null;
-    }
-
-    private static String extractErrorMessage(String body) {
-        try {
-            JsonObject parsed = GSON.fromJson(body, JsonObject.class);
-            if (parsed != null && parsed.has("error") && parsed.get("error").isJsonObject()) {
-                JsonObject error = parsed.getAsJsonObject("error");
-                if (error.has("message")) {
-                    return error.get("message").getAsString();
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return body == null ? "" : body.trim();
     }
 
     private static JsonObject errorResponse(String message) {
