@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/chat_channel.dart';
 import '../models/chat_message.dart';
 import '../services/auth_provider.dart';
+import '../theme/app_theme.dart';
 import 'ai_screen.dart';
 import 'login_screen.dart';
 import 'monitor_screen.dart';
@@ -33,8 +34,13 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    await context.read<AuthProvider>().sendMessage(content);
-    _messageController.clear();
+    try {
+      await context.read<AuthProvider>().sendMessage(content);
+      _messageController.clear();
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar(context, 'Error enviando mensaje: $e');
+    }
   }
 
   void _openMonitor(BuildContext context) {
@@ -66,13 +72,50 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(alert),
-          backgroundColor: Colors.orange.shade700,
+      _showErrorSnackBar(context, alert, isAlert: true);
+    });
+  }
+
+  void _showErrorSnackBar(BuildContext context, String message, {bool isAlert = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isAlert ? AppTheme.warning : AppTheme.critical,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Future<void> _handleLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('Cerrar Sesión'),
+        content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await context.read<AuthProvider>().logout();
+      if (!context.mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<LoginScreen>(
+          builder: (BuildContext context) => const LoginScreen(),
         ),
       );
-    });
+    }
   }
 
   @override
@@ -83,7 +126,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('SentinelLink - ${auth.selectedChannel?.name ?? 'Chat'}'),
+        title: Row(
+          children: <Widget>[
+            Icon(
+              auth.selectedChannel?.isPrivate == true
+                  ? Icons.lock_outline
+                  : Icons.tag,
+              size: 20,
+              color: AppTheme.primaryOrange,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              auth.selectedChannel?.name ?? 'Chat',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ],
+        ),
         actions: <Widget>[
           IconButton(
             tooltip: 'Asistente IA',
@@ -91,33 +149,36 @@ class _ChatScreenState extends State<ChatScreen> {
             icon: const Icon(Icons.smart_toy_outlined),
           ),
           IconButton(
-            tooltip: 'Monitor',
+            tooltip: 'Monitor del Sistema',
             onPressed: () => _openMonitor(context),
             icon: const Icon(Icons.monitor_heart_outlined),
           ),
+          const SizedBox(width: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Center(
-              child: Text(
-                auth.username == null ? 'Invitado' : '${auth.username} · ${auth.role ?? ''}',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: <Widget>[
+                  Text(
+                    auth.username ?? 'Invitado',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  if (auth.role != null)
+                    Text(
+                      auth.role!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
               ),
             ),
           ),
           TextButton(
-            onPressed: () async {
-              await context.read<AuthProvider>().logout();
-              if (!context.mounted) {
-                return;
-              }
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute<LoginScreen>(
-                  builder: (BuildContext context) => const LoginScreen(),
-                ),
-              );
-            },
+            onPressed: () => _handleLogout(context),
             child: const Text('Salir'),
           ),
+          const SizedBox(width: 8),
         ],
       ),
       drawer: wideLayout
@@ -143,13 +204,21 @@ class _ChatScreenState extends State<ChatScreen> {
               children: <Widget>[
                 SizedBox(
                   width: 320,
-                  child: _Sidebar(
-                    auth: auth,
-                    onOpenMonitor: () => _openMonitor(context),
-                    onOpenAssistant: () => _openAssistant(context),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        right: BorderSide(
+                          color: Theme.of(context).dividerColor,
+                        ),
+                      ),
+                    ),
+                    child: _Sidebar(
+                      auth: auth,
+                      onOpenMonitor: () => _openMonitor(context),
+                      onOpenAssistant: () => _openAssistant(context),
+                    ),
                   ),
                 ),
-                const VerticalDivider(width: 1),
                 Expanded(child: chatArea),
               ],
             );
@@ -177,62 +246,186 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         children: <Widget>[
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.monitor_heart_outlined),
-              title: const Text('Monitor del sistema'),
-              subtitle: const Text('CPU, RAM, Disco y alertas'),
-              onTap: onOpenMonitor,
+          _SidebarSection(
+            icon: Icons.monitor_heart_outlined,
+            title: 'Monitor del Sistema',
+            subtitle: 'CPU, RAM, Disco',
+            onTap: onOpenMonitor,
+          ),
+          const SizedBox(height: 8),
+          _SidebarSection(
+            icon: Icons.smart_toy_outlined,
+            title: 'Asistente IA',
+            subtitle: 'Chat con inteligencia',
+            onTap: onOpenAssistant,
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              'CANALES',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.smart_toy_outlined),
-              title: const Text('Asistente IA'),
-              subtitle: const Text('Chat con IA integrado'),
-              onTap: onOpenAssistant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text('Canales', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           if (auth.channels.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('No hay canales disponibles'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+              child: Text(
+                'No hay canales',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             )
           else
             ...auth.channels.map(
-              (ChatChannel channel) => Card(
-                child: ListTile(
-                  selected: auth.selectedChannelId == channel.id,
-                  leading: Icon(channel.isPrivate ? Icons.lock_outline : Icons.tag),
-                  title: Text(channel.name),
-                  subtitle: Text(channel.isPrivate ? 'Canal privado' : 'Canal publico'),
-                  onTap: () => context.read<AuthProvider>().selectChannel(channel.id),
-                ),
+              (ChatChannel channel) => _SidebarChannel(
+                channel: channel,
+                isSelected: auth.selectedChannelId == channel.id,
+                onTap: () =>
+                    context.read<AuthProvider>().selectChannel(channel.id),
               ),
             ),
           const SizedBox(height: 20),
-          const Text('Usuarios online', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              'USUARIOS ONLINE',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           if (auth.onlineUsers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Nadie conectado todavia'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+              child: Text(
+                'Nadie conectado',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             )
           else
             ...auth.onlineUsers.map(
-              (String user) => ListTile(
-                dense: true,
-                leading: const Icon(Icons.circle, size: 10, color: Colors.green),
-                title: Text(user),
+              (String user) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.online,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        user,
+                        style: Theme.of(context).textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _SidebarSection extends StatelessWidget {
+  const _SidebarSection({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        dense: true,
+        leading: Icon(icon, color: AppTheme.primaryOrange),
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        subtitle: Text(
+          subtitle,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _SidebarChannel extends StatelessWidget {
+  const _SidebarChannel({
+    required this.channel,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final ChatChannel channel;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Material(
+        color: isSelected
+            ? AppTheme.primaryOrange.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  channel.isPrivate ? Icons.lock_outline : Icons.tag,
+                  size: 18,
+                  color: isSelected
+                      ? AppTheme.primaryOrange
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    channel.name,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: isSelected
+                          ? AppTheme.primaryOrange
+                          : Theme.of(context).colorScheme.onSurface,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -251,6 +444,13 @@ class _ChatPanel extends StatelessWidget {
   final ScrollController scrollController;
   final VoidCallback onSend;
 
+  String _formatTime(DateTime timestamp) {
+    final DateTime local = timestamp.toLocal();
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<ChatMessage> messages = auth.selectedMessages;
@@ -258,72 +458,133 @@ class _ChatPanel extends StatelessWidget {
     return Column(
       children: <Widget>[
         Expanded(
-          child: Container(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.25),
-            child: messages.isEmpty
-                ? Center(
-                    child: Text(
-                      auth.selectedChannel == null
-                          ? 'Selecciona un canal para empezar'
-                          : 'No hay mensajes aun en ${auth.selectedChannel!.name}',
-                    ),
-                  )
-                : ListView.builder(
-                    controller: scrollController,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: messages.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final ChatMessage message = messages[index];
-                      final bool isMine = message.sender == auth.username;
+          child: messages.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Icon(
+                        Icons.chat_outlined,
+                        size: 48,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withValues(alpha: 0.3),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        auth.selectedChannel == null
+                            ? 'Selecciona un canal para empezar'
+                            : 'No hay mensajes en ${auth.selectedChannel!.name}',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: messages.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final ChatMessage message = messages[index];
+                    final bool isMine = message.sender == auth.username;
 
-                      return Align(
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Align(
                         alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          constraints: const BoxConstraints(maxWidth: 640),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: isMine
-                                ? Theme.of(context).colorScheme.primaryContainer
-                                : Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.black12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Row(
-                                children: <Widget>[
-                                  Text(
-                                    message.sender,
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 520),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isMine
+                                  ? AppTheme.primaryOrange
+                                  : Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: isMine
+                                  ? null
+                                  : Border.all(
+                                      color: Theme.of(context).dividerColor,
+                                    ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Flexible(
+                                      child: Text(
+                                        message.sender,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelMedium
+                                            ?.copyWith(
+                                          color: isMine
+                                              ? AppTheme
+                                                  .primaryOrangeForeground
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _formatTime(message.timestamp),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                        color: isMine
+                                            ? AppTheme.primaryOrangeForeground
+                                                .withValues(alpha: 0.7)
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  message.content,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                    color: isMine
+                                        ? AppTheme.primaryOrangeForeground
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .onSurface,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    message.channelName,
-                                    style: const TextStyle(fontSize: 12, color: Colors.black54),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    _formatTime(message.timestamp),
-                                    style: const TextStyle(fontSize: 12, color: Colors.black54),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(message.content),
-                            ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      );
-                    },
-                  ),
-          ),
+                      ),
+                    );
+                  },
+                ),
         ),
         Container(
           padding: const EdgeInsets.all(16),
-          decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: Colors.black12)),
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: Theme.of(context).dividerColor,
+              ),
+            ),
           ),
           child: SafeArea(
             top: false,
@@ -332,20 +593,25 @@ class _ChatPanel extends StatelessWidget {
                 Expanded(
                   child: TextField(
                     controller: messageController,
+                    enabled: auth.selectedChannelId != null,
                     textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => onSend(),
+                    onSubmitted: auth.selectedChannelId != null
+                        ? (_) => onSend()
+                        : null,
                     decoration: InputDecoration(
                       hintText: auth.selectedChannel == null
                           ? 'Selecciona un canal'
-                          : 'Escribe un mensaje en ${auth.selectedChannel!.name}',
-                      border: const OutlineInputBorder(),
+                          : 'Mensaje en ${auth.selectedChannel!.name}',
+                      prefixIcon: const Icon(Icons.message_outlined),
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
-                FilledButton(
-                  onPressed: auth.selectedChannelId == null ? null : onSend,
-                  child: const Text('Enviar'),
+                FilledButton.icon(
+                  onPressed:
+                      auth.selectedChannelId == null ? null : onSend,
+                  icon: const Icon(Icons.send),
+                  label: const Text('Enviar'),
                 ),
               ],
             ),
@@ -353,12 +619,5 @@ class _ChatPanel extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  String _formatTime(DateTime timestamp) {
-    final DateTime local = timestamp.toLocal();
-    final String hour = local.hour.toString().padLeft(2, '0');
-    final String minute = local.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
   }
 }

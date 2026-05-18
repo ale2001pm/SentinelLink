@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/ai_message.dart';
 import '../services/auth_provider.dart';
+import '../theme/app_theme.dart';
 
 class AIScreen extends StatefulWidget {
   const AIScreen({super.key});
@@ -28,9 +29,20 @@ class _AIScreenState extends State<AIScreen> {
       return;
     }
 
-    await context.read<AuthProvider>().sendAiPrompt(prompt);
-    _promptController.clear();
-    _scrollToBottom();
+    try {
+      await context.read<AuthProvider>().sendAiPrompt(prompt);
+      _promptController.clear();
+      _scrollToBottom();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppTheme.critical,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _scrollToBottom() {
@@ -53,65 +65,173 @@ class _AIScreenState extends State<AIScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Asistente IA'),
+        title: const Row(
+          children: <Widget>[
+            Icon(
+              Icons.smart_toy_outlined,
+              color: AppTheme.primaryOrange,
+            ),
+            SizedBox(width: 8),
+            Text('Asistente IA'),
+          ],
+        ),
+        centerTitle: false,
       ),
       body: Column(
         children: <Widget>[
           Expanded(
-            child: Container(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
-              child: messages.isEmpty
-                  ? const Center(child: Text('Escribe un prompt para empezar'))
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: messages.length,
-                      itemBuilder: (BuildContext context, int index) {
-                        final AiMessage message = messages[index];
-                        final bool isUser = message.isUser;
+            child: messages.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        Icon(
+                          Icons.smart_toy_outlined,
+                          size: 64,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant
+                              .withValues(alpha: 0.3),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Escribe tu primera pregunta',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'El asistente responderá en tiempo real',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: messages.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final AiMessage message = messages[index];
+                      final bool isUser = message.isUser;
 
-                        return Align(
-                          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            constraints: const BoxConstraints(maxWidth: 640),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: isUser
-                                  ? Theme.of(context).colorScheme.primaryContainer
-                                  : Theme.of(context).colorScheme.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.black12),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(
-                                  isUser ? 'Tu' : 'Asistente',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(message.content),
-                              ],
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Align(
+                          alignment: isUser
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 520),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isUser
+                                    ? AppTheme.primaryOrange
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .surface,
+                                borderRadius:
+                                    BorderRadius.circular(12),
+                                border: isUser
+                                    ? null
+                                    : Border.all(
+                                        color: Theme.of(context)
+                                            .dividerColor,
+                                      ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Row(
+                                    children: <Widget>[
+                                      Icon(
+                                        isUser
+                                            ? Icons
+                                                .person_outline
+                                            : Icons
+                                                .smart_toy_outlined,
+                                        size: 18,
+                                        color: isUser
+                                            ? AppTheme
+                                                .primaryOrangeForeground
+                                            : AppTheme
+                                                .primaryOrange,
+                                      ),
+                                      const SizedBox(
+                                        width: 8,
+                                      ),
+                                      Text(
+                                        isUser
+                                            ? 'Tú'
+                                            : 'Asistente IA',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelMedium
+                                            ?.copyWith(
+                                          color: isUser
+                                              ? AppTheme
+                                                  .primaryOrangeForeground
+                                              : AppTheme
+                                                  .primaryOrange,
+                                          fontWeight:
+                                              FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    message.content,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                      color: isUser
+                                          ? AppTheme
+                                              .primaryOrangeForeground
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurface,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        );
-                      },
-                    ),
-            ),
+                        ),
+                      );
+                    },
+                  ),
           ),
-          if (auth.isAiLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Escribiendo respuesta...'),
-              ),
-            ),
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.black12)),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: Theme.of(context).dividerColor,
+                ),
+              ),
             ),
             child: SafeArea(
               top: false,
@@ -122,16 +242,38 @@ class _AIScreenState extends State<AIScreen> {
                       controller: _promptController,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _sendPrompt(context),
-                      decoration: const InputDecoration(
-                        hintText: 'Escribe un prompt para la IA',
-                        border: OutlineInputBorder(),
+                      enabled: !auth.isAiLoading,
+                      maxLines: null,
+                      decoration: InputDecoration(
+                        hintText: 'Pregunta algo...',
+                        prefixIcon:
+                            const Icon(Icons.question_answer_outlined),
+                        suffixIcon: auth.isAiLoading
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor:
+                                        AlwaysStoppedAnimation<Color>(
+                                      AppTheme.primaryOrange,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : null,
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  FilledButton(
-                    onPressed: auth.isAiLoading ? null : () => _sendPrompt(context),
-                    child: const Text('Enviar'),
+                  FilledButton.icon(
+                    onPressed: auth.isAiLoading
+                        ? null
+                        : () => _sendPrompt(context),
+                    icon: const Icon(Icons.send),
+                    label: const Text('Enviar'),
                   ),
                 ],
               ),

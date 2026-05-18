@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'screens/login_screen.dart';
 import 'services/auth_provider.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const SentinelLinkApp());
@@ -17,10 +18,7 @@ class SentinelLinkApp extends StatelessWidget {
       create: (_) => AuthProvider(),
       child: MaterialApp(
         title: 'SentinelLink',
-        theme: ThemeData(
-          primarySwatch: Colors.orange,
-          useMaterial3: true,
-        ),
+        theme: AppTheme.lightTheme(),
         home: const LoginScreen(),
       ),
     );

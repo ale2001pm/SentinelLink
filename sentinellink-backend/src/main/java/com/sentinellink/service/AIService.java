@@ -20,8 +20,6 @@ import java.util.Map;
 public class AIService {
 
     private static final Gson GSON = new Gson();
-    private static final String DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
-    private static final String DEFAULT_OPENAI_URL = "https://api.openai.com/v1/chat/completions";
     private static final String DEFAULT_OLLAMA_MODEL = "llama3.1";
     private static final String DEFAULT_OLLAMA_URL = "http://localhost:11434/api/chat";
     private static final int REQUEST_TIMEOUT_SECONDS = 30;
@@ -40,65 +38,11 @@ public class AIService {
 
         JsonArray messages = buildMessages(requestData, prompt);
 
-        if (isOllamaEnabled()) {
-            return callOllama(messages);
+        if (!isOllamaEnabled()) {
+            return errorResponse(buildOllamaMissingMessage());
         }
 
-        String apiKey = getConfig("OPENAI_API_KEY");
-        if (apiKey == null || apiKey.isBlank()) {
-            return errorResponse("Falta OPENAI_API_KEY en el archivo .env (o activa Ollama)");
-        }
-
-        String apiUrl = getConfig("OPENAI_API_URL");
-        if (apiUrl == null || apiUrl.isBlank()) {
-            apiUrl = DEFAULT_OPENAI_URL;
-        }
-
-        String model = getConfig("OPENAI_MODEL");
-        if (model == null || model.isBlank()) {
-            model = DEFAULT_OPENAI_MODEL;
-        }
-
-        JsonObject payload = new JsonObject();
-        payload.addProperty("model", model);
-        payload.add("messages", messages);
-        payload.addProperty("temperature", 0.7);
-
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(apiUrl))
-                .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(payload)))
-                .build();
-
-        try {
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                return errorResponse("Error API (" + response.statusCode() + "): " + extractErrorMessage(response.body()));
-            }
-
-            JsonObject parsed = GSON.fromJson(response.body(), JsonObject.class);
-            String content = extractOpenAiContent(parsed);
-            if (content == null || content.isBlank()) {
-                return errorResponse("Respuesta vacia de la IA");
-            }
-
-            JsonObject result = new JsonObject();
-            result.addProperty("response", content.trim());
-            return result;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return errorResponse("Error llamando a la IA: " + e.getMessage());
-        } catch (IOException e) {
-            return errorResponse("Error llamando a la IA: " + e.getMessage());
-        } catch (Exception e) {
-            return errorResponse("Error inesperado: " + e.getMessage());
-        }
+        return callOllama(messages);
     }
 
     private JsonArray buildMessages(JsonObject requestData, String prompt) {
@@ -231,23 +175,10 @@ public class AIService {
         }
     }
 
-    private static String extractOpenAiContent(JsonObject parsed) {
-        if (parsed == null || !parsed.has("choices") || !parsed.get("choices").isJsonArray()) {
-            return null;
-        }
-        JsonArray choices = parsed.getAsJsonArray("choices");
-        if (choices.size() == 0 || !choices.get(0).isJsonObject()) {
-            return null;
-        }
-        JsonObject choice = choices.get(0).getAsJsonObject();
-        if (!choice.has("message") || !choice.get("message").isJsonObject()) {
-            return null;
-        }
-        JsonObject message = choice.getAsJsonObject("message");
-        if (!message.has("content")) {
-            return null;
-        }
-        return message.get("content").getAsString();
+    private static String buildOllamaMissingMessage() {
+        return "Para usar el chat de IA necesitas instalar Ollama y un modelo. "
+                + "Pasos: 1) Instala Ollama desde https://ollama.com 2) Ejecuta 'ollama pull llama3.1' "
+                + "3) Ejecuta 'ollama serve' 4) Reinicia el backend.";
     }
 
     private static String extractOllamaContent(JsonObject parsed) {

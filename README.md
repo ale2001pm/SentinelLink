@@ -44,7 +44,7 @@ SentinelLink/
 
 ```
 
-## 🚀 Fase Actual: Fase 6 - Monitorizacion del sistema
+## � Fase Actual: Fase 6 - Monitorizacion del sistema
 
 **Objetivo**: Monitorización en tiempo real de CPU, RAM y Disco con alertas automáticas.
 
@@ -155,7 +155,7 @@ SentinelLink/
 - http (Cliente)
 - json_serializable, json_annotation
 
-## 🔧 Inicio Rapido
+## � Inicio Rapido
 
 ### Backend
 
@@ -255,7 +255,7 @@ Flujo de autenticacion en la app Flutter:
 - **Fase 7** Asistente IA
 - **Fase 8** Pulido final y pruebas
 
-## 📋 Protocolo JSON (Fase 3 - Actualizado Fase 6)
+## � Protocolo JSON (Fase 3 - Actualizado Fase 6)
 
 ```json
 { "type": "LOGIN_REQUEST", "data": { "username": "", "password": "" } }
@@ -281,7 +281,7 @@ Este README es el manual vivo del proyecto.
     - Estado del roadmap
     - Nuevas instrucciones de ejecucion, valores por defecto o notas para usuarios
 
-## 📝 Notas
+## � Notas
 
 - La base de datos persiste entre reinicios (H2 en archivo)
 - La arquitectura permite extender funcionalidades en las siguientes fases
