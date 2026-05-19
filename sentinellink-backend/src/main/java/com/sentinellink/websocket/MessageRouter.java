@@ -6,7 +6,9 @@ import com.sentinellink.model.Channel;
 import com.sentinellink.model.Message;
 import com.sentinellink.service.AIService;
 import com.sentinellink.service.AuthService;
+import com.sentinellink.service.EmailService;
 import com.sentinellink.service.MessageService;
+import com.sentinellink.service.SystemMonitor;
 import com.sentinellink.service.UserPresenceService;
 import java.util.Collection;
 import java.util.Collections;
@@ -44,6 +46,12 @@ public class MessageRouter {
         switch (incoming.getType()) {
             case LOGIN_REQUEST:
                 return new RouteResult(MessageType.LOGIN_RESPONSE, authService.login(data), false);
+            case REGISTER_REQUEST:
+                return new RouteResult(MessageType.REGISTER_RESPONSE, authService.register(data), false);
+            case CREATE_CHANNEL_REQUEST:
+                return new RouteResult(MessageType.CREATE_CHANNEL_RESPONSE, messageService.createChannel(data), false);
+            case CREATE_DM_REQUEST:
+                return new RouteResult(MessageType.CREATE_DM_RESPONSE, messageService.createDm(sender, data), false);
             case SEND_MESSAGE:
                 Message savedMessage = messageService.saveChatMessage(sender, data);
                 return new RouteResult(
@@ -52,14 +60,61 @@ public class MessageRouter {
                         true,
                         savedMessage.getChannel().getId()
                 );
+            case UPDATE_THRESHOLDS:
+                return handleUpdateThresholds(data);
+            case TEST_ALERT:
+                return handleTestAlert();
             case AI_REQUEST:
                 return new RouteResult(MessageType.AI_RESPONSE, aiService.processPrompt(data), false);
             default:
                 return new RouteResult(
                         MessageType.SYSTEM_ALERT,
-                        messageService.createSystemAlert("Tipo de mensaje no soportado en esta fase", "warning"),
+                        messageService.createSystemAlert("Tipo de mensaje no soportado", "warning"),
                         false
                 );
+        }
+    }
+
+    private RouteResult handleUpdateThresholds(JsonObject data) {
+        SystemMonitor monitor = SystemMonitor.getInstance();
+        if (monitor == null) {
+            return new RouteResult(MessageType.ERROR,
+                    messageService.createSystemAlert("Monitor no disponible", "warning"), false);
+        }
+        double cpu  = getDoubleOrDefault(data, "cpuThreshold",  monitor.getCpuThreshold());
+        double ram  = getDoubleOrDefault(data, "ramThreshold",  monitor.getRamThreshold());
+        double disk = getDoubleOrDefault(data, "diskThreshold", monitor.getDiskThreshold());
+        monitor.updateThresholds(cpu, ram, disk);
+        JsonObject response = messageService.createThresholdsPayload(
+                monitor.getCpuThreshold(), monitor.getRamThreshold(), monitor.getDiskThreshold());
+        response.addProperty("success", true);
+        return new RouteResult(MessageType.THRESHOLDS_RESPONSE, response, false);
+    }
+
+    private RouteResult handleTestAlert() {
+        SystemMonitor monitor = SystemMonitor.getInstance();
+        if (monitor != null) {
+            EmailService.sendTestAlert(
+                    monitor.getCpuThreshold(), monitor.getRamThreshold(), monitor.getDiskThreshold());
+        }
+        SocketMessage testAlert = monitor != null
+                ? monitor.buildTestAlertMessage()
+                : new SocketMessage(MessageType.SYSTEM_ALERT,
+                        messageService.createSystemAlert("Notificacion de prueba", "warning"));
+        WebSocketServer.broadcast(testAlert);
+        JsonObject ack = new JsonObject();
+        ack.addProperty("success", true);
+        return new RouteResult(MessageType.THRESHOLDS_RESPONSE, ack, false);
+    }
+
+    private double getDoubleOrDefault(JsonObject json, String key, double defaultValue) {
+        if (json == null || !json.has(key) || json.get(key).isJsonNull()) {
+            return defaultValue;
+        }
+        try {
+            return json.get(key).getAsDouble();
+        } catch (Exception e) {
+            return defaultValue;
         }
     }
 
@@ -74,6 +129,16 @@ public class MessageRouter {
 
     public SocketMessage createMessageHistoryMessage(Channel channel, List<Message> messages) {
         return new SocketMessage(MessageType.MESSAGE_HISTORY, messageService.createMessageHistoryPayload(channel, messages));
+    }
+
+    public SocketMessage createThresholdsMessage() {
+        SystemMonitor monitor = SystemMonitor.getInstance();
+        if (monitor == null) {
+            return new SocketMessage(MessageType.THRESHOLDS_RESPONSE, messageService.createThresholdsPayload(80, 90, 90));
+        }
+        return new SocketMessage(MessageType.THRESHOLDS_RESPONSE,
+                messageService.createThresholdsPayload(
+                        monitor.getCpuThreshold(), monitor.getRamThreshold(), monitor.getDiskThreshold()));
     }
 
     public String toJson(SocketMessage message) {
@@ -101,20 +166,9 @@ public class MessageRouter {
             this.channelId = channelId;
         }
 
-        public MessageType getResponseType() {
-            return responseType;
-        }
-
-        public JsonObject getResponseData() {
-            return responseData;
-        }
-
-        public boolean isBroadcast() {
-            return broadcast;
-        }
-
-        public Long getChannelId() {
-            return channelId;
-        }
+        public MessageType getResponseType() { return responseType; }
+        public JsonObject getResponseData()  { return responseData; }
+        public boolean isBroadcast()         { return broadcast; }
+        public Long getChannelId()           { return channelId; }
     }
 }

@@ -25,23 +25,42 @@ class AuthProvider extends ChangeNotifier {
   final List<ChatChannel> channels = <ChatChannel>[];
   final List<String> onlineUsers = <String>[];
   final Map<int, List<ChatMessage>> _messagesByChannel = <int, List<ChatMessage>>{};
+
   SystemMetrics? _currentMetrics;
+  final List<SystemMetrics> _metricsHistory = <SystemMetrics>[];
+  static const int _maxHistoryLength = 60;
+
   String? _systemAlertMessage;
   int _systemAlertVersion = 0;
+
+  double cpuThreshold = 80.0;
+  double ramThreshold = 90.0;
+  double diskThreshold = 90.0;
+
   final List<AiMessage> _aiMessages = <AiMessage>[];
   bool _isAiLoading = false;
 
   int? selectedChannelId;
   Completer<bool>? _loginCompleter;
+  Completer<bool>? _registerCompleter;
+  Completer<int?>? _createChannelCompleter;
+  Completer<int?>? _createDmCompleter;
 
   String webSocketUrl = 'ws://localhost:8080/ws';
 
   SystemMetrics? get currentMetrics => _currentMetrics;
+  List<SystemMetrics> get metricsHistory => List<SystemMetrics>.unmodifiable(_metricsHistory);
   String? get systemAlertMessage => _systemAlertMessage;
   int get systemAlertVersion => _systemAlertVersion;
   bool get isAiLoading => _isAiLoading;
 
   List<AiMessage> get aiMessages => List<AiMessage>.unmodifiable(_aiMessages);
+
+  List<ChatChannel> get groupChannels =>
+      channels.where((ChatChannel c) => !c.isDm).toList();
+
+  List<ChatChannel> get dmChannels =>
+      channels.where((ChatChannel c) => c.isDm).toList();
 
   List<ChatMessage> get selectedMessages {
     final int? channelId = selectedChannelId;
@@ -53,13 +72,9 @@ class AuthProvider extends ChangeNotifier {
 
   ChatChannel? get selectedChannel {
     final int? channelId = selectedChannelId;
-    if (channelId == null) {
-      return null;
-    }
+    if (channelId == null) return null;
     for (final ChatChannel channel in channels) {
-      if (channel.id == channelId) {
-        return channel;
-      }
+      if (channel.id == channelId) return channel;
     }
     return null;
   }
@@ -109,6 +124,54 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> register({
+    required String inputUsername,
+    required String inputPassword,
+  }) async {
+    errorMessage = null;
+    isLoading = true;
+    notifyListeners();
+
+    try {
+      await _webSocketService.connect(webSocketUrl);
+
+      final Completer<bool> completer = Completer<bool>();
+      _registerCompleter = completer;
+      await _messagesSubscription?.cancel();
+      _messagesSubscription = _webSocketService.messages.listen(_handleSocketMessage);
+
+      _webSocketService.send(
+        SocketMessage(
+          type: 'REGISTER_REQUEST',
+          data: <String, dynamic>{
+            'username': inputUsername,
+            'password': inputPassword,
+          },
+        ),
+      );
+
+      final bool result = await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          errorMessage = 'Timeout esperando REGISTER_RESPONSE';
+          return false;
+        },
+      );
+
+      return result;
+    } catch (e) {
+      errorMessage = 'No se pudo conectar al backend: $e';
+      return false;
+    } finally {
+      _registerCompleter = null;
+      await _messagesSubscription?.cancel();
+      _messagesSubscription = null;
+      await _webSocketService.disconnect();
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> logout() async {
     await _messagesSubscription?.cancel();
     _messagesSubscription = null;
@@ -121,10 +184,14 @@ class AuthProvider extends ChangeNotifier {
     onlineUsers.clear();
     _messagesByChannel.clear();
     _currentMetrics = null;
+    _metricsHistory.clear();
     _systemAlertMessage = null;
     _systemAlertVersion = 0;
     _aiMessages.clear();
     _isAiLoading = false;
+    cpuThreshold = 80.0;
+    ramThreshold = 90.0;
+    diskThreshold = 90.0;
     notifyListeners();
   }
 
@@ -142,11 +209,109 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<int?> createChannel({
+    required String name,
+    bool isPrivate = false,
+  }) async {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      errorMessage = 'El nombre del canal no puede estar vacio';
+      notifyListeners();
+      return null;
+    }
+    if (!_webSocketService.isConnected) {
+      errorMessage = 'WebSocket no conectado';
+      notifyListeners();
+      return null;
+    }
+
+    errorMessage = null;
+    isLoading = true;
+    notifyListeners();
+
+    try {
+      final Completer<int?> completer = Completer<int?>();
+      _createChannelCompleter = completer;
+
+      _webSocketService.send(
+        SocketMessage(
+          type: 'CREATE_CHANNEL_REQUEST',
+          data: <String, dynamic>{
+            'name': trimmed,
+            'private': isPrivate,
+          },
+        ),
+      );
+
+      final int? channelId = await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          errorMessage = 'Timeout esperando CREATE_CHANNEL_RESPONSE';
+          return null;
+        },
+      );
+
+      if (channelId != null && channelId > 0) {
+        await selectChannel(channelId);
+      }
+      return channelId;
+    } catch (e) {
+      errorMessage = 'No se pudo crear el canal: $e';
+      return null;
+    } finally {
+      _createChannelCompleter = null;
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<int?> createDm(String targetUser) async {
+    if (!_webSocketService.isConnected) {
+      errorMessage = 'WebSocket no conectado';
+      notifyListeners();
+      return null;
+    }
+
+    errorMessage = null;
+    isLoading = true;
+    notifyListeners();
+
+    try {
+      final Completer<int?> completer = Completer<int?>();
+      _createDmCompleter = completer;
+
+      _webSocketService.send(
+        SocketMessage(
+          type: 'CREATE_DM_REQUEST',
+          data: <String, dynamic>{'targetUser': targetUser},
+        ),
+      );
+
+      final int? channelId = await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          errorMessage = 'Timeout creando DM';
+          return null;
+        },
+      );
+
+      if (channelId != null && channelId > 0) {
+        await selectChannel(channelId);
+      }
+      return channelId;
+    } catch (e) {
+      errorMessage = 'No se pudo crear el DM: $e';
+      return null;
+    } finally {
+      _createDmCompleter = null;
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> sendMessage(String content) async {
     final String trimmed = content.trim();
-    if (trimmed.isEmpty) {
-      return;
-    }
+    if (trimmed.isEmpty) return;
 
     final int? channelId = selectedChannelId ?? (channels.isNotEmpty ? channels.first.id : null);
     if (channelId == null) {
@@ -166,11 +331,52 @@ class AuthProvider extends ChangeNotifier {
     );
   }
 
-  Future<void> sendAiPrompt(String prompt) async {
-    final String trimmed = prompt.trim();
-    if (trimmed.isEmpty) {
+  Future<void> sendImageMessage(String base64) async {
+    final String trimmed = base64.trim();
+    if (trimmed.isEmpty) return;
+
+    final int? channelId = selectedChannelId ?? (channels.isNotEmpty ? channels.first.id : null);
+    if (channelId == null) {
+      errorMessage = 'No hay un canal activo';
+      notifyListeners();
       return;
     }
+
+    _webSocketService.send(
+      SocketMessage(
+        type: 'SEND_MESSAGE',
+        data: <String, dynamic>{
+          'channelId': channelId,
+          'imageBase64': trimmed,
+        },
+      ),
+    );
+  }
+
+  void updateThresholds(double cpu, double ram, double disk) {
+    if (!_webSocketService.isConnected) return;
+    _webSocketService.send(
+      SocketMessage(
+        type: 'UPDATE_THRESHOLDS',
+        data: <String, dynamic>{
+          'cpuThreshold': cpu,
+          'ramThreshold': ram,
+          'diskThreshold': disk,
+        },
+      ),
+    );
+  }
+
+  void sendTestAlert() {
+    if (!_webSocketService.isConnected) return;
+    _webSocketService.send(
+      SocketMessage(type: 'TEST_ALERT', data: <String, dynamic>{}),
+    );
+  }
+
+  Future<void> sendAiPrompt(String prompt) async {
+    final String trimmed = prompt.trim();
+    if (trimmed.isEmpty) return;
 
     if (!_webSocketService.isConnected) {
       errorMessage = 'WebSocket no conectado';
@@ -179,11 +385,7 @@ class AuthProvider extends ChangeNotifier {
     }
 
     _aiMessages.add(
-      AiMessage(
-        role: 'user',
-        content: trimmed,
-        timestamp: DateTime.now(),
-      ),
+      AiMessage(role: 'user', content: trimmed, timestamp: DateTime.now()),
     );
     _isAiLoading = true;
     notifyListeners();
@@ -216,6 +418,41 @@ class AuthProvider extends ChangeNotifier {
           _loginCompleter!.complete(success);
         }
         break;
+      case 'REGISTER_RESPONSE':
+        final bool success = msg.data['success'] == true;
+        if (!success) {
+          errorMessage = (msg.data['error'] ?? 'Error de registro').toString();
+        } else {
+          errorMessage = null;
+        }
+        if (_registerCompleter != null && !_registerCompleter!.isCompleted) {
+          _registerCompleter!.complete(success);
+        }
+        break;
+      case 'CREATE_CHANNEL_RESPONSE':
+        final bool success = msg.data['success'] == true;
+        if (!success) {
+          errorMessage = (msg.data['error'] ?? 'Error al crear canal').toString();
+        } else {
+          errorMessage = null;
+        }
+        final int channelId = _readInt(msg.data['channelId']);
+        if (_createChannelCompleter != null && !_createChannelCompleter!.isCompleted) {
+          _createChannelCompleter!.complete(success ? channelId : null);
+        }
+        break;
+      case 'CREATE_DM_RESPONSE':
+        final bool success = msg.data['success'] == true;
+        if (!success) {
+          errorMessage = (msg.data['error'] ?? 'Error al crear DM').toString();
+        } else {
+          errorMessage = null;
+        }
+        final int dmChannelId = _readInt(msg.data['channelId']);
+        if (_createDmCompleter != null && !_createDmCompleter!.isCompleted) {
+          _createDmCompleter!.complete(success ? dmChannelId : null);
+        }
+        break;
       case 'USER_LIST':
         onlineUsers
           ..clear()
@@ -241,28 +478,32 @@ class AuthProvider extends ChangeNotifier {
         selectedChannelId ??= message.channelId;
         break;
       case 'SYSTEM_METRICS':
-        _currentMetrics = SystemMetrics.fromJson(msg.data);
+        final SystemMetrics metrics = SystemMetrics.fromJson(msg.data);
+        _currentMetrics = metrics;
+        _metricsHistory.add(metrics);
+        if (_metricsHistory.length > _maxHistoryLength) {
+          _metricsHistory.removeAt(0);
+        }
         break;
       case 'SYSTEM_ALERT':
         _systemAlertMessage = (msg.data['message'] ?? '').toString();
         _systemAlertVersion++;
         break;
+      case 'THRESHOLDS_RESPONSE':
+        if (msg.data.containsKey('cpuThreshold')) {
+          cpuThreshold = _readDouble(msg.data['cpuThreshold'], cpuThreshold);
+          ramThreshold = _readDouble(msg.data['ramThreshold'], ramThreshold);
+          diskThreshold = _readDouble(msg.data['diskThreshold'], diskThreshold);
+        }
+        break;
       case 'AI_RESPONSE':
         String response = (msg.data['response'] ?? '').toString();
-        if (response.isEmpty) {
-          response = 'Respuesta vacia de la IA';
-        }
+        if (response.isEmpty) response = 'Respuesta vacia de la IA';
         _aiMessages.add(
-          AiMessage(
-            role: 'assistant',
-            content: response,
-            timestamp: DateTime.now(),
-          ),
+          AiMessage(role: 'assistant', content: response, timestamp: DateTime.now()),
         );
         _isAiLoading = false;
-        if (msg.data['error'] == true) {
-          errorMessage = response;
-        }
+        if (msg.data['error'] == true) errorMessage = response;
         break;
       case 'ERROR':
         errorMessage = (msg.data['message'] ?? 'Se ha producido un error').toString();
@@ -333,24 +574,17 @@ class AuthProvider extends ChangeNotifier {
     final int start = _aiMessages.length > 12 ? _aiMessages.length - 12 : 0;
     return _aiMessages
         .sublist(start)
-        .map((AiMessage msg) => <String, String>{
-              'role': msg.role,
-              'content': msg.content,
-            })
+        .map((AiMessage msg) => <String, String>{'role': msg.role, 'content': msg.content})
         .toList();
   }
 
   List<String> _readStringList(dynamic rawUsers) {
-    if (rawUsers is! List) {
-      return <String>[];
-    }
+    if (rawUsers is! List) return <String>[];
     return rawUsers.map((dynamic value) => value.toString()).toList();
   }
 
   List<ChatChannel> _readChannelList(dynamic rawChannels) {
-    if (rawChannels is! List) {
-      return <ChatChannel>[];
-    }
+    if (rawChannels is! List) return <ChatChannel>[];
     return rawChannels
         .whereType<Map>()
         .map((Map<dynamic, dynamic> value) => ChatChannel.fromJson(Map<String, dynamic>.from(value)))
@@ -358,9 +592,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   List<ChatMessage> _readMessageList(dynamic rawMessages) {
-    if (rawMessages is! List) {
-      return <ChatMessage>[];
-    }
+    if (rawMessages is! List) return <ChatMessage>[];
     return rawMessages
         .whereType<Map>()
         .map((Map<dynamic, dynamic> value) => ChatMessage.fromJson(Map<String, dynamic>.from(value)))
@@ -368,10 +600,13 @@ class AuthProvider extends ChangeNotifier {
   }
 
   int _readInt(dynamic rawValue) {
-    if (rawValue is num) {
-      return rawValue.toInt();
-    }
+    if (rawValue is num) return rawValue.toInt();
     return int.tryParse(rawValue.toString()) ?? 0;
+  }
+
+  double _readDouble(dynamic rawValue, double fallback) {
+    if (rawValue is num) return rawValue.toDouble();
+    return double.tryParse(rawValue.toString()) ?? fallback;
   }
 
   @override

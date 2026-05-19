@@ -30,12 +30,25 @@ public class MessageService {
                 .orElseThrow(() -> new IllegalStateException("Usuario emisor no encontrado"));
 
         String content = getStringOrEmpty(sendData, "content").trim();
-        if (content.isEmpty()) {
+        String imageData = getStringOrEmpty(sendData, "imageBase64").trim();
+        boolean isImage = !imageData.isEmpty();
+        if (!isImage && content.isEmpty()) {
             throw new IllegalArgumentException("El mensaje no puede estar vacio");
         }
 
         Channel channel = resolveChannel(sendData);
-        Message message = new Message(content, LocalDateTime.now(), sender, channel);
+        String messageType = isImage ? "IMAGE" : "TEXT";
+        if (isImage && content.isEmpty()) {
+            content = "";
+        }
+        Message message = new Message(
+                content,
+                messageType,
+                isImage ? imageData : null,
+                LocalDateTime.now(),
+                sender,
+                channel
+        );
         return messageRepository.save(message);
     }
 
@@ -44,6 +57,10 @@ public class MessageService {
         response.addProperty("messageId", message.getId());
         response.addProperty("sender", message.getSender().getUsername());
         response.addProperty("content", message.getContent());
+        response.addProperty("messageType", message.getMessageType());
+        if (message.getImageData() != null && !message.getImageData().isEmpty()) {
+            response.addProperty("imageBase64", message.getImageData());
+        }
         response.addProperty("timestamp", message.getTimestamp().toString());
         response.addProperty("channelId", message.getChannel().getId());
         response.addProperty("channelName", message.getChannel().getName());
@@ -58,6 +75,11 @@ public class MessageService {
                 channelJson.addProperty("id", channel.getId());
                 channelJson.addProperty("name", channel.getName());
                 channelJson.addProperty("private", channel.isPrivate());
+                channelJson.addProperty("channelType", channel.isDm() ? "DM" : "GROUP");
+                if (channel.isDm()) {
+                    channelJson.addProperty("dmParticipant1", channel.getDmParticipant1());
+                    channelJson.addProperty("dmParticipant2", channel.getDmParticipant2());
+                }
                 channelArray.add(channelJson);
             }
         }
@@ -86,12 +108,101 @@ public class MessageService {
         return channelRepository.findAll();
     }
 
+    public List<Channel> findAllGroupChannels() {
+        return channelRepository.findAllGroupChannels();
+    }
+
+    public List<Channel> findChannelsForUser(String username) {
+        return channelRepository.findChannelsForUser(username);
+    }
+
     public Optional<Channel> getDefaultChannel() {
         return channelRepository.findByName("general");
     }
 
     public List<Message> findMessagesByChannelId(Long channelId) {
         return messageRepository.findByChannelId(channelId);
+    }
+
+    public JsonObject createChannel(JsonObject data) {
+        String name = getStringOrEmpty(data, "name").trim();
+        boolean isPrivate = getBooleanOrDefault(data, "private", false);
+
+        JsonObject response = new JsonObject();
+        if (name.length() < 3) {
+            response.addProperty("success", false);
+            response.addProperty("error", "El nombre del canal debe tener al menos 3 caracteres");
+            return response;
+        }
+        if (name.length() > 40) {
+            response.addProperty("success", false);
+            response.addProperty("error", "El nombre del canal es demasiado largo");
+            return response;
+        }
+        if (channelRepository.findByName(name).isPresent()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "El canal ya existe");
+            return response;
+        }
+
+        Channel channel = new Channel(name, isPrivate);
+        Channel saved = channelRepository.save(channel);
+
+        response.addProperty("success", true);
+        response.addProperty("channelId", saved.getId());
+        response.addProperty("name", saved.getName());
+        response.addProperty("private", saved.isPrivate());
+        return response;
+    }
+
+    public JsonObject createDm(String senderUsername, JsonObject data) {
+        String targetUsername = getStringOrEmpty(data, "targetUser").trim();
+
+        JsonObject response = new JsonObject();
+        if (targetUsername.isEmpty()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "Usuario destino no especificado");
+            return response;
+        }
+        if (targetUsername.equalsIgnoreCase(senderUsername)) {
+            response.addProperty("success", false);
+            response.addProperty("error", "No puedes iniciar un DM contigo mismo");
+            return response;
+        }
+        if (!userRepository.findByUsername(targetUsername).isPresent()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "El usuario no existe");
+            return response;
+        }
+
+        Optional<Channel> existing = channelRepository.findDmBetween(senderUsername, targetUsername);
+        if (existing.isPresent()) {
+            Channel dm = existing.get();
+            response.addProperty("success", true);
+            response.addProperty("channelId", dm.getId());
+            response.addProperty("name", dm.getName());
+            response.addProperty("channelType", "DM");
+            response.addProperty("dmParticipant1", dm.getDmParticipant1());
+            response.addProperty("dmParticipant2", dm.getDmParticipant2());
+            response.addProperty("alreadyExisted", true);
+            return response;
+        }
+
+        String p1 = senderUsername.compareToIgnoreCase(targetUsername) <= 0 ? senderUsername : targetUsername;
+        String p2 = senderUsername.compareToIgnoreCase(targetUsername) <= 0 ? targetUsername : senderUsername;
+        String dmName = "dm:" + p1 + ":" + p2;
+
+        Channel dm = new Channel(dmName, p1, p2);
+        Channel saved = channelRepository.save(dm);
+
+        response.addProperty("success", true);
+        response.addProperty("channelId", saved.getId());
+        response.addProperty("name", saved.getName());
+        response.addProperty("channelType", "DM");
+        response.addProperty("dmParticipant1", saved.getDmParticipant1());
+        response.addProperty("dmParticipant2", saved.getDmParticipant2());
+        response.addProperty("alreadyExisted", false);
+        return response;
     }
 
     public JsonObject createSystemAlert(String message, String level) {
@@ -126,6 +237,14 @@ public class MessageService {
         return alert;
     }
 
+    public JsonObject createThresholdsPayload(double cpu, double ram, double disk) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("cpuThreshold", cpu);
+        payload.addProperty("ramThreshold", ram);
+        payload.addProperty("diskThreshold", disk);
+        return payload;
+    }
+
     private Channel resolveChannel(JsonObject sendData) {
         Long channelId = getLongOrNull(sendData, "channelId");
         if (channelId != null) {
@@ -148,5 +267,12 @@ public class MessageService {
             return null;
         }
         return json.get(key).getAsLong();
+    }
+
+    private boolean getBooleanOrDefault(JsonObject json, String key, boolean defaultValue) {
+        if (json == null || !json.has(key) || json.get(key).isJsonNull()) {
+            return defaultValue;
+        }
+        return json.get(key).getAsBoolean();
     }
 }

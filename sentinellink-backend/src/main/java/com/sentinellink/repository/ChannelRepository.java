@@ -48,10 +48,7 @@ public class ChannelRepository {
                     .setParameter("name", name)
                     .setMaxResults(1)
                     .getResultList();
-            if (channels.isEmpty()) {
-                return Optional.empty();
-            }
-            return Optional.of(channels.get(0));
+            return channels.isEmpty() ? Optional.empty() : Optional.of(channels.get(0));
         } finally {
             em.close();
         }
@@ -61,6 +58,54 @@ public class ChannelRepository {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             return em.createQuery("SELECT c FROM Channel c ORDER BY c.id", Channel.class).getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    /** Returns only group channels (excludes DMs). */
+    public List<Channel> findAllGroupChannels() {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            return em.createQuery(
+                    "SELECT c FROM Channel c WHERE c.channelType IS NULL OR c.channelType = 'GROUP' ORDER BY c.id",
+                    Channel.class).getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    /** Returns group channels + DM channels where username is a participant. */
+    public List<Channel> findChannelsForUser(String username) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            return em.createQuery(
+                    "SELECT c FROM Channel c WHERE " +
+                    "(c.channelType IS NULL OR c.channelType = 'GROUP') OR " +
+                    "(c.channelType = 'DM' AND (c.dmParticipant1 = :username OR c.dmParticipant2 = :username)) " +
+                    "ORDER BY c.id",
+                    Channel.class)
+                    .setParameter("username", username)
+                    .getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    /** Finds an existing DM channel between two users (order-independent). */
+    public Optional<Channel> findDmBetween(String user1, String user2) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            List<Channel> results = em.createQuery(
+                    "SELECT c FROM Channel c WHERE c.channelType = 'DM' AND " +
+                    "((c.dmParticipant1 = :u1 AND c.dmParticipant2 = :u2) OR " +
+                    " (c.dmParticipant1 = :u2 AND c.dmParticipant2 = :u1))",
+                    Channel.class)
+                    .setParameter("u1", user1)
+                    .setParameter("u2", user2)
+                    .setMaxResults(1)
+                    .getResultList();
+            return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
         } finally {
             em.close();
         }

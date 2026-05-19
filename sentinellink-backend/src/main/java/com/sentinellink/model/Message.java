@@ -22,6 +22,12 @@ public class Message {
     @Column(nullable = false, length = 2000)
     private String content;
 
+    @Column(nullable = false, length = 20)
+    private String messageType;
+
+    @Column(length = 100000)
+    private String imageData;
+
     @Column(nullable = false)
     private LocalDateTime timestamp;
 
@@ -38,6 +44,22 @@ public class Message {
 
     public Message(String content, LocalDateTime timestamp, User sender, Channel channel) {
         this.content = content;
+        this.messageType = "TEXT";
+        this.imageData = null;
+        this.timestamp = timestamp;
+        this.sender = sender;
+        this.channel = channel;
+    }
+
+    public Message(String content,
+                   String messageType,
+                   String imageData,
+                   LocalDateTime timestamp,
+                   User sender,
+                   Channel channel) {
+        this.content = content;
+        this.messageType = messageType;
+        this.imageData = imageData;
         this.timestamp = timestamp;
         this.sender = sender;
         this.channel = channel;
@@ -53,6 +75,22 @@ public class Message {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getMessageType() {
+        return messageType;
+    }
+
+    public void setMessageType(String messageType) {
+        this.messageType = messageType;
+    }
+
+    public String getImageData() {
+        return imageData;
+    }
+
+    public void setImageData(String imageData) {
+        this.imageData = imageData;
     }
 
     public LocalDateTime getTimestamp() {

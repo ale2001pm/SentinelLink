@@ -101,30 +101,13 @@ public class Main {
                 return;
             }
 
-            boolean foundLock = false;
             for (java.io.File file : files) {
                 String name = file.getName();
-                // Delete H2 lock files, trace files, and main DB files if lock detected
+                // Delete H2 lock and trace files only to preserve persisted data
                 if (name.contains(".lock.db") || name.contains(".trace.db") || 
                     (name.startsWith("sentinellink_db") && (name.endsWith(".lock") || name.endsWith(".trace")))) {
                     if (file.delete()) {
                         System.out.println("Cleaned up H2 lock file: " + name);
-                        foundLock = true;
-                    }
-                }
-                // If we find .mv.db, also delete associated files on lock detection
-                if (name.equals("sentinellink_db.mv.db")) {
-                    foundLock = true;
-                }
-            }
-            
-            // If lock was detected, delete the main DB file to force recreation
-            if (foundLock) {
-                for (java.io.File file : files) {
-                    if (file.getName().equals("sentinellink_db.mv.db")) {
-                        if (file.delete()) {
-                            System.out.println("Removed locked H2 database file: sentinellink_db.mv.db");
-                        }
                     }
                 }
             }

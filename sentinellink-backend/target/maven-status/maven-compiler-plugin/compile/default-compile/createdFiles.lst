@@ -16,6 +16,8 @@ com\sentinellink\repository\UserRepository.class
 com\sentinellink\websocket\MessageType.class
 com\sentinellink\service\UserPresenceService.class
 com\sentinellink\model\Message.class
+com\sentinellink\service\EmailService$1.class
+com\sentinellink\service\EmailService.class
 com\sentinellink\service\SystemMonitor$SystemMetricsSnapshot.class
 com\sentinellink\server\Main.class
 com\sentinellink\model\UserRole.class

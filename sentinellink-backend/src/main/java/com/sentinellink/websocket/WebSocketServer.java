@@ -1,5 +1,6 @@
 package com.sentinellink.websocket;
 
+import com.google.gson.JsonObject;
 import com.sentinellink.model.Channel;
 import com.sentinellink.service.SystemMonitor;
 import jakarta.websocket.Session;
@@ -24,7 +25,6 @@ public class WebSocketServer {
         if (server != null) {
             return;
         }
-
         try {
             server = new Server("localhost", DEFAULT_PORT, "/", null, ChatWebSocketEndpoint.class);
             server.start();
@@ -43,7 +43,7 @@ public class WebSocketServer {
 
     public static void onOpen(Session session) {
         CONNECTED_CLIENTS.add(session);
-        sendChannelListToAll();
+        sendGroupChannelListToSession(session);
         sendUserListToAll();
         sendLatestMetricsToSession(session);
         sendLatestAlertToSession(session);
@@ -61,30 +61,40 @@ public class WebSocketServer {
             String sender = SESSION_USERNAMES.getOrDefault(session.getId(), "");
             MessageRouter.RouteResult result = ROUTER.route(incoming, sender, SESSION_USERNAMES.values());
 
-            if (incoming != null && incoming.getType() == MessageType.LOGIN_REQUEST && incoming.getData() != null
-                    && incoming.getData().has("username") && incoming.getData().has("password")) {
-                SocketMessage loginResponse = new SocketMessage(result.getResponseType(), result.getResponseData());
-                sendToSession(session, loginResponse);
+            if (incoming != null && incoming.getType() == MessageType.LOGIN_REQUEST) {
+                handleLoginResponse(session, incoming, result);
+                return;
+            }
 
-                if (result.getResponseData().has("success") && result.getResponseData().get("success").getAsBoolean()) {
-                    SESSION_USERNAMES.put(session.getId(), result.getResponseData().get("username").getAsString());
-                    Channel defaultChannel = getDefaultChannel();
-                    SESSION_CHANNELS.put(session.getId(), defaultChannel.getId());
-                    sendToSession(session, ROUTER.createChannelListMessage(ROUTER.getMessageService().findAllChannels()));
-                    sendToSession(session, ROUTER.createMessageHistoryMessage(
-                            defaultChannel,
-                            ROUTER.getMessageService().findMessagesByChannelId(defaultChannel.getId())));
-                    sendUserListToAll();
+            if (incoming != null && incoming.getType() == MessageType.CREATE_CHANNEL_REQUEST) {
+                JsonObject responseData = result.getResponseData();
+                sendToSession(session, new SocketMessage(result.getResponseType(), responseData));
+                if (responseData.has("success") && responseData.get("success").getAsBoolean()) {
+                    sendChannelListToConnectedUsers();
                 }
+                return;
+            }
+
+            if (incoming != null && incoming.getType() == MessageType.CREATE_DM_REQUEST) {
+                JsonObject responseData = result.getResponseData();
+                sendToSession(session, new SocketMessage(result.getResponseType(), responseData));
+                if (responseData.has("success") && responseData.get("success").getAsBoolean()) {
+                    sendChannelListToConnectedUsers();
+                }
+                return;
+            }
+
+            if (incoming != null && (incoming.getType() == MessageType.UPDATE_THRESHOLDS
+                    || incoming.getType() == MessageType.TEST_ALERT)) {
+                sendToSession(session, new SocketMessage(result.getResponseType(), result.getResponseData()));
                 return;
             }
 
             SocketMessage response = new SocketMessage(result.getResponseType(), result.getResponseData());
             if (result.isBroadcast()) {
-                Long channelId = result.getChannelId();
-                if (channelId == null) {
-                    channelId = SESSION_CHANNELS.get(session.getId());
-                }
+                Long channelId = result.getChannelId() != null
+                        ? result.getChannelId()
+                        : SESSION_CHANNELS.get(session.getId());
                 sendToChannel(channelId, response);
             } else {
                 sendToSession(session, response);
@@ -92,9 +102,47 @@ public class WebSocketServer {
         } catch (Exception e) {
             SocketMessage error = new SocketMessage(
                     MessageType.ERROR,
-                    ROUTER.route(null, "", List.of()).getResponseData()
-            );
+                    ROUTER.route(null, "", List.of()).getResponseData());
             sendToSession(session, error);
+        }
+    }
+
+    private static void handleLoginResponse(Session session, SocketMessage incoming, MessageRouter.RouteResult result) {
+        JsonObject responseData = result.getResponseData();
+        String requestedUsername = responseData.has("username")
+                ? responseData.get("username").getAsString() : "";
+        boolean isAlreadyConnected = false;
+        if (!requestedUsername.isBlank()) {
+            for (String existing : SESSION_USERNAMES.values()) {
+                if (requestedUsername.equalsIgnoreCase(existing)) {
+                    isAlreadyConnected = true;
+                    break;
+                }
+            }
+        }
+        if (isAlreadyConnected) {
+            JsonObject denied = new JsonObject();
+            denied.addProperty("success", false);
+            denied.addProperty("error", "El usuario ya tiene una sesion activa");
+            sendToSession(session, new SocketMessage(MessageType.LOGIN_RESPONSE, denied));
+            return;
+        }
+
+        sendToSession(session, new SocketMessage(result.getResponseType(), responseData));
+
+        if (responseData.has("success") && responseData.get("success").getAsBoolean()) {
+            SESSION_USERNAMES.put(session.getId(), responseData.get("username").getAsString());
+            Channel defaultChannel = getDefaultChannel();
+            SESSION_CHANNELS.put(session.getId(), defaultChannel.getId());
+
+            List<Channel> userChannels = ROUTER.getMessageService()
+                    .findChannelsForUser(responseData.get("username").getAsString());
+            sendToSession(session, ROUTER.createChannelListMessage(userChannels));
+            sendToSession(session, ROUTER.createMessageHistoryMessage(
+                    defaultChannel,
+                    ROUTER.getMessageService().findMessagesByChannelId(defaultChannel.getId())));
+            sendToSession(session, ROUTER.createThresholdsMessage());
+            sendUserListToAll();
         }
     }
 
@@ -107,14 +155,9 @@ public class WebSocketServer {
 
     public static void onError(Session session, Throwable throwable) {
         if (session != null && session.isOpen()) {
-            MessageRouter.RouteResult result = ROUTER.route(
-                    new SocketMessage(MessageType.SYSTEM_ALERT, null),
-                    "",
-                    List.of());
             SocketMessage alert = new SocketMessage(
                     MessageType.SYSTEM_ALERT,
-                    result.getResponseData()
-            );
+                    ROUTER.getMessageService().createSystemAlert("Error de conexion", "warning"));
             sendToSession(session, alert);
         }
         if (throwable != null) {
@@ -131,9 +174,24 @@ public class WebSocketServer {
         sendToAll(userList);
     }
 
-    private static void sendChannelListToAll() {
-        SocketMessage channelList = ROUTER.createChannelListMessage(ROUTER.getMessageService().findAllChannels());
-        sendToAll(channelList);
+    /** Sends each logged-in user their personalized channel list (group + their DMs). */
+    private static void sendChannelListToConnectedUsers() {
+        for (Session client : CONNECTED_CLIENTS) {
+            if (!client.isOpen()) {
+                continue;
+            }
+            String clientUsername = SESSION_USERNAMES.get(client.getId());
+            List<Channel> channels = (clientUsername != null && !clientUsername.isBlank())
+                    ? ROUTER.getMessageService().findChannelsForUser(clientUsername)
+                    : ROUTER.getMessageService().findAllGroupChannels();
+            sendToSession(client, ROUTER.createChannelListMessage(channels));
+        }
+    }
+
+    /** Sends only group channels to a single (unauthenticated) session. */
+    private static void sendGroupChannelListToSession(Session session) {
+        List<Channel> groupChannels = ROUTER.getMessageService().findAllGroupChannels();
+        sendToSession(session, ROUTER.createChannelListMessage(groupChannels));
     }
 
     private static void sendLatestMetricsToSession(Session session) {
@@ -154,23 +212,33 @@ public class WebSocketServer {
         if (incoming.getData() == null || !incoming.getData().has("channelId")) {
             sendToSession(session, new SocketMessage(
                     MessageType.ERROR,
-                    ROUTER.getMessageService().createSystemAlert("Canal invalido", "warning")
-            ));
+                    ROUTER.getMessageService().createSystemAlert("Canal invalido", "warning")));
             return;
         }
 
         long channelId = incoming.getData().get("channelId").getAsLong();
         Channel channel = ROUTER.getMessageService().findAllChannels().stream()
-                .filter(candidate -> candidate.getId().equals(channelId))
+                .filter(c -> c.getId().equals(channelId))
                 .findFirst()
                 .orElse(null);
 
         if (channel == null) {
             sendToSession(session, new SocketMessage(
                     MessageType.ERROR,
-                    ROUTER.getMessageService().createSystemAlert("Canal no encontrado", "warning")
-            ));
+                    ROUTER.getMessageService().createSystemAlert("Canal no encontrado", "warning")));
             return;
+        }
+
+        String username = SESSION_USERNAMES.get(session.getId());
+        if (channel.isDm() && username != null) {
+            boolean isParticipant = username.equalsIgnoreCase(channel.getDmParticipant1())
+                    || username.equalsIgnoreCase(channel.getDmParticipant2());
+            if (!isParticipant) {
+                sendToSession(session, new SocketMessage(
+                        MessageType.ERROR,
+                        ROUTER.getMessageService().createSystemAlert("Acceso denegado a este canal", "warning")));
+                return;
+            }
         }
 
         SESSION_CHANNELS.put(session.getId(), channel.getId());
@@ -181,7 +249,7 @@ public class WebSocketServer {
 
     private static Channel getDefaultChannel() {
         return ROUTER.getMessageService().getDefaultChannel()
-                .orElseGet(() -> ROUTER.getMessageService().findAllChannels().stream()
+                .orElseGet(() -> ROUTER.getMessageService().findAllGroupChannels().stream()
                         .findFirst()
                         .orElseThrow(() -> new IllegalStateException("No hay canales disponibles")));
     }
@@ -203,7 +271,6 @@ public class WebSocketServer {
             sendToAll(message);
             return;
         }
-
         String payload = ROUTER.toJson(message);
         for (Session client : CONNECTED_CLIENTS) {
             if (client.isOpen() && channelId.equals(SESSION_CHANNELS.get(client.getId()))) {

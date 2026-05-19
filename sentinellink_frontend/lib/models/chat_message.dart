@@ -4,6 +4,8 @@ class ChatMessage {
   final String channelName;
   final String sender;
   final String content;
+  final String messageType;
+  final String? imageBase64;
   final DateTime timestamp;
 
   ChatMessage({
@@ -12,6 +14,8 @@ class ChatMessage {
     required this.channelName,
     required this.sender,
     required this.content,
+    required this.messageType,
+    required this.imageBase64,
     required this.timestamp,
   });
 
@@ -24,6 +28,10 @@ class ChatMessage {
       channelName: (json['channelName'] ?? '').toString(),
       sender: (json['sender'] ?? '').toString(),
       content: (json['content'] ?? '').toString(),
+      messageType: (json['messageType'] ?? 'TEXT').toString(),
+      imageBase64: (json['imageBase64'] ?? '').toString().isEmpty
+          ? null
+          : (json['imageBase64'] ?? '').toString(),
       timestamp: parsedTimestamp,
     );
   }

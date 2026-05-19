@@ -20,11 +20,12 @@ public class SystemMonitor {
     private static final Logger LOGGER = LoggerFactory.getLogger(SystemMonitor.class);
     private static volatile SocketMessage latestMetricsMessage;
     private static volatile SocketMessage latestAlertMessage;
+    private static volatile SystemMonitor INSTANCE;
 
     private final MessageService messageService;
-    private final double cpuThreshold;
-    private final double ramThreshold;
-    private final double diskThreshold;
+    private volatile double cpuThreshold;
+    private volatile double ramThreshold;
+    private volatile double diskThreshold;
     private final long intervalSeconds;
 
     private final SystemInfo systemInfo;
@@ -58,6 +59,11 @@ public class SystemMonitor {
             return thread;
         });
         this.previousCpuTicks = processor.getSystemCpuLoadTicks();
+        INSTANCE = this;
+    }
+
+    public static SystemMonitor getInstance() {
+        return INSTANCE;
     }
 
     public void start() {
@@ -74,12 +80,37 @@ public class SystemMonitor {
         pollAndBroadcast();
     }
 
+    public synchronized void updateThresholds(double cpu, double ram, double disk) {
+        this.cpuThreshold = Math.max(0, Math.min(100, cpu));
+        this.ramThreshold = Math.max(0, Math.min(100, ram));
+        this.diskThreshold = Math.max(0, Math.min(100, disk));
+        cpuAlertActive = false;
+        ramAlertActive = false;
+        diskAlertActive = false;
+        LOGGER.info("Thresholds updated: cpu>{} ram>{} disk>{}", cpuThreshold, ramThreshold, diskThreshold);
+    }
+
+    public double getCpuThreshold() { return cpuThreshold; }
+    public double getRamThreshold() { return ramThreshold; }
+    public double getDiskThreshold() { return diskThreshold; }
+
     public static SocketMessage getLatestMetricsMessage() {
         return latestMetricsMessage;
     }
 
     public static SocketMessage getLatestAlertMessage() {
         return latestAlertMessage;
+    }
+
+    public SocketMessage buildTestAlertMessage() {
+        JsonObject payload = messageService.createSystemAlert(
+                "Notificacion de prueba — umbrales activos: CPU>" + cpuThreshold + "% RAM>" + ramThreshold + "% Disco>" + diskThreshold + "%",
+                "warning",
+                "test",
+                0.0,
+                0.0);
+        payload.addProperty("isTest", true);
+        return new SocketMessage(MessageType.SYSTEM_ALERT, payload);
     }
 
     private void pollAndBroadcast() {
@@ -128,10 +159,7 @@ public class SystemMonitor {
             usedBytes += Math.max(0L, total - free);
         }
 
-        if (totalBytes <= 0L) {
-            return 0.0;
-        }
-        return ((double) usedBytes / (double) totalBytes) * 100.0;
+        return totalBytes <= 0L ? 0.0 : ((double) usedBytes / (double) totalBytes) * 100.0;
     }
 
     private void evaluateAndBroadcastAlerts(SystemMetricsSnapshot snapshot) {
@@ -158,6 +186,7 @@ public class SystemMonitor {
                                 threshold));
                 latestAlertMessage = alertMessage;
                 WebSocketServer.broadcast(alertMessage);
+                EmailService.sendThresholdAlert(metricName, currentValue, threshold);
             }
         } else if (active) {
             setter.set(false);

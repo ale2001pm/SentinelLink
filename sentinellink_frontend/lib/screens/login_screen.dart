@@ -5,6 +5,7 @@ import '../services/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import 'chat_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,9 +16,9 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController =
-      TextEditingController(text: 'admin');
+      TextEditingController();
   final TextEditingController _passwordController =
-      TextEditingController(text: 'admin123');
+      TextEditingController();
 
   @override
   void dispose() {
@@ -137,11 +138,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ],
                             const SizedBox(height: 14),
-                            Text(
-                              'Por defecto: admin / admin123',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall,
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<RegisterScreen>(
+                                    builder: (BuildContext context) => const RegisterScreen(),
+                                  ),
+                                );
+                              },
+                              child: const Text('¿No tienes cuenta? Registrate'),
                             ),
                           ],
                         ),

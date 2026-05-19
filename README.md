@@ -85,6 +85,8 @@ SentinelLink/
 - [x] Protocolo JSON definido con tipos:
     - [x] LOGIN_REQUEST
     - [x] LOGIN_RESPONSE
+    - [x] REGISTER_REQUEST
+    - [x] REGISTER_RESPONSE
     - [x] SEND_MESSAGE
     - [x] RECEIVE_MESSAGE
     - [x] USER_LIST
@@ -180,7 +182,7 @@ mvn clean compile
 mvn exec:java
 ```
 
-Para el Asistente IA (Fase 7) con Ollama (gratis), crea el archivo:
+Para el Asistente IA (Fase 7) con Ollama, crea el archivo:
 
 ```bash
 sentinellink-backend/.env

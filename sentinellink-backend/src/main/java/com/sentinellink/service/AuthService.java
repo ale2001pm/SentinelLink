@@ -2,6 +2,7 @@ package com.sentinellink.service;
 
 import com.google.gson.JsonObject;
 import com.sentinellink.model.User;
+import com.sentinellink.model.UserRole;
 import com.sentinellink.repository.UserRepository;
 import java.util.Optional;
 
@@ -29,6 +30,36 @@ public class AuthService {
 
         response.addProperty("success", false);
         response.addProperty("error", "Credenciales invalidas");
+        return response;
+    }
+
+    public JsonObject register(JsonObject registerData) {
+        String username = getStringOrEmpty(registerData, "username").trim();
+        String password = getStringOrEmpty(registerData, "password").trim();
+
+        JsonObject response = new JsonObject();
+        if (username.length() < 3) {
+            response.addProperty("success", false);
+            response.addProperty("error", "El usuario debe tener al menos 3 caracteres");
+            return response;
+        }
+        if (password.length() < 4) {
+            response.addProperty("success", false);
+            response.addProperty("error", "La contrasena debe tener al menos 4 caracteres");
+            return response;
+        }
+        if (userRepository.findByUsername(username).isPresent()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "El usuario ya existe");
+            return response;
+        }
+
+        User user = new User(username, password, UserRole.USER, false);
+        userRepository.save(user);
+
+        response.addProperty("success", true);
+        response.addProperty("username", user.getUsername());
+        response.addProperty("role", user.getRole().name().toLowerCase());
         return response;
     }
 
