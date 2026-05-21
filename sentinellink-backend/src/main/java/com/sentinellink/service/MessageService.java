@@ -108,6 +108,10 @@ public class MessageService {
         return channelRepository.findAll();
     }
 
+    public Optional<Channel> findChannelById(Long channelId) {
+        return channelRepository.findById(channelId);
+    }
+
     public List<Channel> findAllGroupChannels() {
         return channelRepository.findAllGroupChannels();
     }
@@ -152,6 +156,90 @@ public class MessageService {
         response.addProperty("channelId", saved.getId());
         response.addProperty("name", saved.getName());
         response.addProperty("private", saved.isPrivate());
+        return response;
+    }
+
+    public JsonObject renameChannel(JsonObject data) {
+        JsonObject response = new JsonObject();
+        Long channelId = getLongOrNull(data, "channelId");
+        String newName = getStringOrEmpty(data, "newName").trim();
+
+        if (channelId == null) {
+            response.addProperty("success", false);
+            response.addProperty("error", "ID de canal no especificado");
+            return response;
+        }
+        if (newName.length() < 3) {
+            response.addProperty("success", false);
+            response.addProperty("error", "El nombre debe tener al menos 3 caracteres");
+            return response;
+        }
+        if (newName.length() > 40) {
+            response.addProperty("success", false);
+            response.addProperty("error", "El nombre es demasiado largo");
+            return response;
+        }
+
+        Optional<Channel> opt = channelRepository.findById(channelId);
+        if (!opt.isPresent()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "Canal no encontrado");
+            return response;
+        }
+        Channel channel = opt.get();
+        if (channel.isDm()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "No se puede renombrar un canal DM");
+            return response;
+        }
+        if (channelRepository.findByName(newName).filter(c -> !c.getId().equals(channelId)).isPresent()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "Ya existe un canal con ese nombre");
+            return response;
+        }
+
+        channel.setName(newName);
+        channelRepository.save(channel);
+
+        response.addProperty("success", true);
+        response.addProperty("channelId", channelId);
+        response.addProperty("newName", newName);
+        return response;
+    }
+
+    public JsonObject deleteChannel(JsonObject data) {
+        JsonObject response = new JsonObject();
+        Long channelId = getLongOrNull(data, "channelId");
+
+        if (channelId == null) {
+            response.addProperty("success", false);
+            response.addProperty("error", "ID de canal no especificado");
+            return response;
+        }
+
+        Optional<Channel> opt = channelRepository.findById(channelId);
+        if (!opt.isPresent()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "Canal no encontrado");
+            return response;
+        }
+        Channel channel = opt.get();
+        if (channel.isDm()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "No se puede eliminar un canal DM");
+            return response;
+        }
+        if ("general".equalsIgnoreCase(channel.getName())) {
+            response.addProperty("success", false);
+            response.addProperty("error", "No se puede eliminar el canal general");
+            return response;
+        }
+
+        messageRepository.deleteByChannelId(channelId);
+        channelRepository.deleteById(channelId);
+
+        response.addProperty("success", true);
+        response.addProperty("channelId", channelId);
         return response;
     }
 

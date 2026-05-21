@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import com.sentinellink.model.Channel;
 import com.sentinellink.service.SystemMonitor;
 import jakarta.websocket.Session;
-import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,6 +16,7 @@ public class WebSocketServer {
     private static final MessageRouter ROUTER = new MessageRouter();
     private static final Set<Session> CONNECTED_CLIENTS = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<String, String> SESSION_USERNAMES = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, String> SESSION_ROLES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> SESSION_CHANNELS = new ConcurrentHashMap<>();
 
     private static Server server;
@@ -44,7 +44,6 @@ public class WebSocketServer {
     public static void onOpen(Session session) {
         CONNECTED_CLIENTS.add(session);
         sendGroupChannelListToSession(session);
-        sendUserListToAll();
         sendLatestMetricsToSession(session);
         sendLatestAlertToSession(session);
     }
@@ -76,6 +75,24 @@ public class WebSocketServer {
             }
 
             if (incoming != null && incoming.getType() == MessageType.CREATE_DM_REQUEST) {
+                JsonObject responseData = result.getResponseData();
+                sendToSession(session, new SocketMessage(result.getResponseType(), responseData));
+                if (responseData.has("success") && responseData.get("success").getAsBoolean()) {
+                    sendChannelListToConnectedUsers();
+                }
+                return;
+            }
+
+            if (incoming != null && incoming.getType() == MessageType.RENAME_CHANNEL_REQUEST) {
+                JsonObject responseData = result.getResponseData();
+                sendToSession(session, new SocketMessage(result.getResponseType(), responseData));
+                if (responseData.has("success") && responseData.get("success").getAsBoolean()) {
+                    sendChannelListToConnectedUsers();
+                }
+                return;
+            }
+
+            if (incoming != null && incoming.getType() == MessageType.DELETE_CHANNEL_REQUEST) {
                 JsonObject responseData = result.getResponseData();
                 sendToSession(session, new SocketMessage(result.getResponseType(), responseData));
                 if (responseData.has("success") && responseData.get("success").getAsBoolean()) {
@@ -132,8 +149,15 @@ public class WebSocketServer {
 
         if (responseData.has("success") && responseData.get("success").getAsBoolean()) {
             SESSION_USERNAMES.put(session.getId(), responseData.get("username").getAsString());
+            if (responseData.has("role")) {
+                SESSION_ROLES.put(session.getId(), responseData.get("role").getAsString());
+            }
             Channel defaultChannel = getDefaultChannel();
             SESSION_CHANNELS.put(session.getId(), defaultChannel.getId());
+
+            // Send USER_LIST immediately after registering the new user so other clients
+            // and the new session itself see the updated online list before any large payloads arrive.
+            sendUserListToAll();
 
             List<Channel> userChannels = ROUTER.getMessageService()
                     .findChannelsForUser(responseData.get("username").getAsString());
@@ -142,13 +166,13 @@ public class WebSocketServer {
                     defaultChannel,
                     ROUTER.getMessageService().findMessagesByChannelId(defaultChannel.getId())));
             sendToSession(session, ROUTER.createThresholdsMessage());
-            sendUserListToAll();
         }
     }
 
     public static void onClose(Session session) {
         CONNECTED_CLIENTS.remove(session);
         SESSION_USERNAMES.remove(session.getId());
+        SESSION_ROLES.remove(session.getId());
         SESSION_CHANNELS.remove(session.getId());
         sendUserListToAll();
     }
@@ -172,6 +196,19 @@ public class WebSocketServer {
     private static void sendUserListToAll() {
         SocketMessage userList = ROUTER.createUserListMessage(SESSION_USERNAMES.values());
         sendToAll(userList);
+    }
+
+    /** Broadcasts a message only to sessions whose user has the ADMIN role. */
+    public static void broadcastToAdmins(SocketMessage message) {
+        String payload = ROUTER.toJson(message);
+        for (Session client : CONNECTED_CLIENTS) {
+            if (client.isOpen() && "ADMIN".equalsIgnoreCase(SESSION_ROLES.get(client.getId()))) {
+                try {
+                    client.getBasicRemote().sendText(payload);
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     /** Sends each logged-in user their personalized channel list (group + their DMs). */
@@ -260,7 +297,7 @@ public class WebSocketServer {
             if (client.isOpen()) {
                 try {
                     client.getBasicRemote().sendText(payload);
-                } catch (IOException ignored) {
+                } catch (Exception ignored) {
                 }
             }
         }
@@ -271,13 +308,26 @@ public class WebSocketServer {
             sendToAll(message);
             return;
         }
+
+        // Resolve channel to determine membership (DM vs group).
+        Channel channel = ROUTER.getMessageService().findChannelById(channelId).orElse(null);
+
         String payload = ROUTER.toJson(message);
         for (Session client : CONNECTED_CLIENTS) {
-            if (client.isOpen() && channelId.equals(SESSION_CHANNELS.get(client.getId()))) {
-                try {
-                    client.getBasicRemote().sendText(payload);
-                } catch (IOException ignored) {
-                }
+            if (!client.isOpen()) continue;
+            String clientUsername = SESSION_USERNAMES.get(client.getId());
+            if (clientUsername == null || clientUsername.isBlank()) continue;
+
+            if (channel != null && channel.isDm()) {
+                boolean isParticipant = clientUsername.equalsIgnoreCase(channel.getDmParticipant1())
+                        || clientUsername.equalsIgnoreCase(channel.getDmParticipant2());
+                if (!isParticipant) continue;
+            }
+            // Group channel: deliver to every logged-in user.
+
+            try {
+                client.getBasicRemote().sendText(payload);
+            } catch (Exception ignored) {
             }
         }
     }
@@ -288,7 +338,7 @@ public class WebSocketServer {
         }
         try {
             session.getBasicRemote().sendText(ROUTER.toJson(message));
-        } catch (IOException ignored) {
+        } catch (Exception ignored) {
         }
     }
 }

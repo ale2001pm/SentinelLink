@@ -25,6 +25,7 @@ class AuthProvider extends ChangeNotifier {
   final List<ChatChannel> channels = <ChatChannel>[];
   final List<String> onlineUsers = <String>[];
   final Map<int, List<ChatMessage>> _messagesByChannel = <int, List<ChatMessage>>{};
+  final Map<int, int> _unreadCounts = <int, int>{};
 
   SystemMetrics? _currentMetrics;
   final List<SystemMetrics> _metricsHistory = <SystemMetrics>[];
@@ -45,6 +46,8 @@ class AuthProvider extends ChangeNotifier {
   Completer<bool>? _registerCompleter;
   Completer<int?>? _createChannelCompleter;
   Completer<int?>? _createDmCompleter;
+  Completer<bool>? _renameChannelCompleter;
+  Completer<bool>? _deleteChannelCompleter;
 
   String webSocketUrl = 'ws://localhost:8080/ws';
 
@@ -53,6 +56,7 @@ class AuthProvider extends ChangeNotifier {
   String? get systemAlertMessage => _systemAlertMessage;
   int get systemAlertVersion => _systemAlertVersion;
   bool get isAiLoading => _isAiLoading;
+  Map<int, int> get unreadCounts => Map<int, int>.unmodifiable(_unreadCounts);
 
   List<AiMessage> get aiMessages => List<AiMessage>.unmodifiable(_aiMessages);
 
@@ -183,6 +187,7 @@ class AuthProvider extends ChangeNotifier {
     channels.clear();
     onlineUsers.clear();
     _messagesByChannel.clear();
+    _unreadCounts.clear();
     _currentMetrics = null;
     _metricsHistory.clear();
     _systemAlertMessage = null;
@@ -197,6 +202,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> selectChannel(int channelId) async {
     selectedChannelId = channelId;
+    _unreadCounts.remove(channelId);
     notifyListeners();
 
     if (_webSocketService.isConnected) {
@@ -353,6 +359,76 @@ class AuthProvider extends ChangeNotifier {
     );
   }
 
+  Future<bool> renameChannel(int channelId, String newName) async {
+    if (!_webSocketService.isConnected) {
+      errorMessage = 'WebSocket no conectado';
+      notifyListeners();
+      return false;
+    }
+    errorMessage = null;
+    isLoading = true;
+    notifyListeners();
+    try {
+      final Completer<bool> completer = Completer<bool>();
+      _renameChannelCompleter = completer;
+      _webSocketService.send(
+        SocketMessage(
+          type: 'RENAME_CHANNEL_REQUEST',
+          data: <String, dynamic>{'channelId': channelId, 'newName': newName},
+        ),
+      );
+      return await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          errorMessage = 'Timeout al renombrar canal';
+          return false;
+        },
+      );
+    } catch (e) {
+      errorMessage = 'No se pudo renombrar el canal: $e';
+      return false;
+    } finally {
+      _renameChannelCompleter = null;
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> deleteChannel(int channelId) async {
+    if (!_webSocketService.isConnected) {
+      errorMessage = 'WebSocket no conectado';
+      notifyListeners();
+      return false;
+    }
+    errorMessage = null;
+    isLoading = true;
+    notifyListeners();
+    try {
+      final Completer<bool> completer = Completer<bool>();
+      _deleteChannelCompleter = completer;
+      _webSocketService.send(
+        SocketMessage(
+          type: 'DELETE_CHANNEL_REQUEST',
+          data: <String, dynamic>{'channelId': channelId},
+        ),
+      );
+      return await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          errorMessage = 'Timeout al eliminar canal';
+          return false;
+        },
+      );
+    } catch (e) {
+      errorMessage = 'No se pudo eliminar el canal: $e';
+      return false;
+    } finally {
+      _deleteChannelCompleter = null;
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
   void updateThresholds(double cpu, double ram, double disk) {
     if (!_webSocketService.isConnected) return;
     _webSocketService.send(
@@ -441,6 +517,33 @@ class AuthProvider extends ChangeNotifier {
           _createChannelCompleter!.complete(success ? channelId : null);
         }
         break;
+      case 'RENAME_CHANNEL_RESPONSE':
+        final bool renameSuccess = msg.data['success'] == true;
+        if (!renameSuccess) {
+          errorMessage = (msg.data['error'] ?? 'Error al renombrar canal').toString();
+        } else {
+          errorMessage = null;
+        }
+        if (_renameChannelCompleter != null && !_renameChannelCompleter!.isCompleted) {
+          _renameChannelCompleter!.complete(renameSuccess);
+        }
+        break;
+      case 'DELETE_CHANNEL_RESPONSE':
+        final bool deleteSuccess = msg.data['success'] == true;
+        if (!deleteSuccess) {
+          errorMessage = (msg.data['error'] ?? 'Error al eliminar canal').toString();
+        } else {
+          errorMessage = null;
+          if (deleteSuccess && msg.data.containsKey('channelId')) {
+            final int deletedId = _readInt(msg.data['channelId']);
+            if (selectedChannelId == deletedId) selectedChannelId = null;
+            _messagesByChannel.remove(deletedId);
+          }
+        }
+        if (_deleteChannelCompleter != null && !_deleteChannelCompleter!.isCompleted) {
+          _deleteChannelCompleter!.complete(deleteSuccess);
+        }
+        break;
       case 'CREATE_DM_RESPONSE':
         final bool success = msg.data['success'] == true;
         if (!success) {
@@ -470,11 +573,15 @@ class AuthProvider extends ChangeNotifier {
         final int channelId = _readInt(msg.data['channelId']);
         final List<ChatMessage> history = _readMessageList(msg.data['messages']);
         _messagesByChannel[channelId] = history;
+        _unreadCounts.remove(channelId);
         selectedChannelId ??= channelId;
         break;
       case 'RECEIVE_MESSAGE':
         final ChatMessage message = ChatMessage.fromJson(msg.data);
         _messagesByChannel.putIfAbsent(message.channelId, () => <ChatMessage>[]).add(message);
+        if (message.channelId != selectedChannelId) {
+          _unreadCounts[message.channelId] = (_unreadCounts[message.channelId] ?? 0) + 1;
+        }
         selectedChannelId ??= message.channelId;
         break;
       case 'SYSTEM_METRICS':

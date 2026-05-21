@@ -23,7 +23,7 @@ public class AuthService {
 
         if (user.isPresent() && user.get().getPassword().equals(password)) {
             response.addProperty("success", true);
-            response.addProperty("role", user.get().getRole().name().toLowerCase());
+            response.addProperty("role", user.get().getRole().name());
             response.addProperty("username", user.get().getUsername());
             return response;
         }

@@ -63,6 +63,24 @@ public class MessageRepository {
         }
     }
 
+    public void deleteByChannelId(Long channelId) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            em.getTransaction().begin();
+            em.createQuery("DELETE FROM Message m WHERE m.channel.id = :channelId")
+                    .setParameter("channelId", channelId)
+                    .executeUpdate();
+            em.getTransaction().commit();
+        } catch (Exception e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            throw e;
+        } finally {
+            em.close();
+        }
+    }
+
     public void deleteById(Long id) {
         EntityManager em = JpaUtil.getEntityManager();
         try {

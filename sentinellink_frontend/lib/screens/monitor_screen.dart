@@ -36,8 +36,6 @@ class MonitorPanel extends StatefulWidget {
 }
 
 class _MonitorPanelState extends State<MonitorPanel> {
-  int _lastAlertVersion = 0;
-
   late double _cpuSlider;
   late double _ramSlider;
   late double _diskSlider;
@@ -52,23 +50,6 @@ class _MonitorPanelState extends State<MonitorPanel> {
       _ramSlider = auth.ramThreshold;
       _diskSlider = auth.diskThreshold;
     }
-  }
-
-  void _showAlertIfNeeded(AuthProvider auth) {
-    if (auth.systemAlertVersion == _lastAlertVersion) return;
-    _lastAlertVersion = auth.systemAlertVersion;
-    final String? alert = auth.systemAlertMessage;
-    if (alert == null || alert.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(alert),
-          backgroundColor: AppTheme.critical,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    });
   }
 
   String _formatTimestamp(DateTime timestamp) {
@@ -93,7 +74,6 @@ class _MonitorPanelState extends State<MonitorPanel> {
   @override
   Widget build(BuildContext context) {
     final AuthProvider auth = context.watch<AuthProvider>();
-    _showAlertIfNeeded(auth);
 
     if (!_thresholdsDirty) {
       _cpuSlider = auth.cpuThreshold;
@@ -107,67 +87,89 @@ class _MonitorPanelState extends State<MonitorPanel> {
     return Stack(
       children: <Widget>[
         SafeArea(
-          child: CustomScrollView(
-            slivers: <Widget>[
-              SliverPadding(
-                padding: const EdgeInsets.all(20),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate(<Widget>[
-                    _buildHeader(context, auth, metrics),
-                    const SizedBox(height: 24),
-                    if (metrics == null)
-                      _buildWaiting(context)
-                    else ...<Widget>[
-                      _buildMetricCard(
-                        context, 'CPU', Icons.speed,
-                        metrics.cpuPercent, auth.cpuThreshold,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildMetricCard(
-                        context, 'Memoria RAM', Icons.memory,
-                        metrics.ramPercent, auth.ramThreshold,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildMetricCard(
-                        context, 'Almacenamiento', Icons.storage,
-                        metrics.diskPercent, auth.diskThreshold,
-                      ),
-                      const SizedBox(height: 24),
-                      if (history.length >= 2) ...<Widget>[
-                        _buildChartCard(context, history),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 860),
+              child: CustomScrollView(
+                slivers: <Widget>[
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate(<Widget>[
+                        _buildHeader(context, auth, metrics),
                         const SizedBox(height: 24),
-                      ],
-                      _buildThresholdEditor(context, auth),
-                      const SizedBox(height: 16),
-                      if (auth.systemAlertMessage != null && auth.systemAlertMessage!.isNotEmpty)
-                        _buildAlertBox(context, auth),
-                    ],
-                    const SizedBox(height: 80),
-                  ]),
-                ),
+                        if (metrics == null)
+                          _buildWaiting(context)
+                        else ...<Widget>[
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: _buildMetricCard(
+                                  context, 'CPU', Icons.speed,
+                                  metrics.cpuPercent, _cpuSlider,
+                                  const Color(0xFFFF6B35),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildMetricCard(
+                                  context, 'RAM', Icons.memory,
+                                  metrics.ramPercent, _ramSlider,
+                                  const Color(0xFF3B82F6),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildMetricCard(
+                                  context, 'Disco', Icons.storage,
+                                  metrics.diskPercent, _diskSlider,
+                                  AppTheme.online,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          if (history.length >= 2) ...<Widget>[
+                            _buildChartCard(context, history),
+                            const SizedBox(height: 16),
+                          ],
+                          _buildThresholdEditor(context, auth),
+                          const SizedBox(height: 16),
+                          if (auth.systemAlertMessage != null &&
+                              auth.systemAlertMessage!.isNotEmpty)
+                            _buildAlertBox(context, auth),
+                        ],
+                        const SizedBox(height: 96),
+                      ]),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-        Positioned(
-          bottom: 24,
-          right: 24,
-          child: FloatingActionButton.extended(
-            onPressed: () {
-              auth.sendTestAlert();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Notificacion de prueba enviada'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-            backgroundColor: AppTheme.primaryOrange,
-            foregroundColor: AppTheme.primaryOrangeForeground,
-            icon: const Icon(Icons.notifications_active_outlined),
-            label: const Text('Prueba'),
+        if (auth.role == 'ADMIN')
+          Positioned(
+            bottom: 24,
+            right: 24,
+            child: FloatingActionButton.extended(
+              onPressed: () {
+                auth.sendTestAlert();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Notificacion de prueba enviada'),
+                    behavior: SnackBarBehavior.floating,
+                    margin: EdgeInsets.all(16),
+                  ),
+                );
+              },
+              backgroundColor: AppTheme.primaryOrange,
+              foregroundColor: AppTheme.primaryOrangeForeground,
+              icon: const Icon(Icons.notifications_active_outlined),
+              label: const Text('Prueba'),
+            ),
           ),
-        ),
       ],
     );
   }
@@ -249,8 +251,9 @@ class _MonitorPanelState extends State<MonitorPanel> {
     String title,
     IconData icon,
     double value,
-    double threshold,
-  ) {
+    double threshold, [
+    Color? accentColor,
+  ]) {
     final Color color = _colorForValue(value, threshold);
     return Card(
       margin: EdgeInsets.zero,
@@ -261,11 +264,11 @@ class _MonitorPanelState extends State<MonitorPanel> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Icon(icon, color: color),
-                const SizedBox(width: 12),
+                Icon(icon, color: accentColor ?? color),
+                const SizedBox(width: 8),
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),

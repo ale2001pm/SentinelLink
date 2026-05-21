@@ -24,6 +24,7 @@ class SentinelLinkApp extends StatelessWidget {
         builder: (BuildContext context, ThemeController theme, Widget? child) {
           return MaterialApp(
             title: 'SentinelLink',
+            debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme(),
             darkTheme: AppTheme.darkTheme(),
             themeMode: theme.mode,

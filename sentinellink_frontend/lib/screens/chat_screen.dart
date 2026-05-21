@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -26,12 +27,18 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   int _lastAlertVersion = 0;
+  int _lastMessageCount = 0;
   _MainPanel _activePanel = _MainPanel.chat;
   double _sidebarWidth = 300;
   bool _sidebarVisible = true;
+  int _alertIdCounter = 0;
+  final List<_AlertItem> _activeAlerts = <_AlertItem>[];
 
   @override
   void dispose() {
+    for (final _AlertItem item in _activeAlerts) {
+      item.timer?.cancel();
+    }
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -93,7 +100,38 @@ class _ChatScreenState extends State<ChatScreen> {
     if (alert == null || alert.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _showErrorSnackBar(context, alert, isAlert: true);
+      final int id = _alertIdCounter++;
+      final _AlertItem item = _AlertItem(id: id, message: alert);
+      item.timer = Timer(const Duration(seconds: 10), () => _removeAlert(id));
+      setState(() => _activeAlerts.add(item));
+    });
+  }
+
+  void _removeAlert(int id) {
+    if (!mounted) return;
+    setState(() {
+      final int idx = _activeAlerts.indexWhere((_AlertItem a) => a.id == id);
+      if (idx != -1) {
+        _activeAlerts[idx].timer?.cancel();
+        _activeAlerts.removeAt(idx);
+      }
+    });
+  }
+
+  void _scrollToBottomIfNeeded(AuthProvider auth) {
+    final int count = auth.selectedMessages.length;
+    if (count <= _lastMessageCount) return;
+    _lastMessageCount = count;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_scrollController.hasClients &&
+          _scrollController.position.hasContentDimensions) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -202,6 +240,84 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _showRenameChannelDialog(BuildContext context, ChatChannel channel) async {
+    final AuthProvider auth = context.read<AuthProvider>();
+    final TextEditingController nameController = TextEditingController(text: channel.name);
+    bool canSubmit = nameController.text.trim().isNotEmpty;
+
+    try {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => StatefulBuilder(
+          builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
+            title: const Text('Renombrar canal'),
+            content: TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Nuevo nombre',
+                prefixIcon: Icon(Icons.tag),
+              ),
+              onChanged: (String v) => setS(() => canSubmit = v.trim().length >= 3),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: canSubmit ? () => Navigator.pop(dialogCtx, true) : null,
+                child: const Text('Renombrar'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (confirmed != true) return;
+      final bool ok = await auth.renameChannel(channel.id, nameController.text.trim());
+      if (!mounted) return;
+      if (ok) {
+        _showInfoSnackBar(this.context, 'Canal renombrado');
+      } else {
+        _showErrorSnackBar(this.context, auth.errorMessage ?? 'No se pudo renombrar');
+      }
+    } finally {
+      nameController.dispose();
+    }
+  }
+
+  Future<void> _confirmDeleteChannel(BuildContext context, ChatChannel channel) async {
+    final AuthProvider auth = context.read<AuthProvider>();
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('Eliminar canal'),
+        content: Text('¿Eliminar "#${channel.name}"? Esta acción no se puede deshacer.'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.critical),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    final bool ok = await auth.deleteChannel(channel.id);
+    if (!mounted) return;
+    if (ok) {
+      _showInfoSnackBar(this.context, 'Canal eliminado');
+    } else {
+      _showErrorSnackBar(this.context, auth.errorMessage ?? 'No se pudo eliminar');
+    }
+  }
+
   Future<void> _openDm(BuildContext context, String targetUser) async {
     final AuthProvider auth = context.read<AuthProvider>();
     final int? channelId = await auth.createDm(targetUser);
@@ -247,6 +363,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final AuthProvider auth = context.watch<AuthProvider>();
     _showSystemAlertIfNeeded(auth);
+    _scrollToBottomIfNeeded(auth);
     final bool wideLayout = MediaQuery.of(context).size.width >= 900;
 
     final Widget sidebar = _Sidebar(
@@ -265,10 +382,29 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!wideLayout) Navigator.of(context).pop();
         _openDm(context, user);
       },
+      onRenameChannel: (ChatChannel ch) {
+        if (!wideLayout) Navigator.of(context).pop();
+        _showRenameChannelDialog(context, ch);
+      },
+      onDeleteChannel: (ChatChannel ch) {
+        if (!wideLayout) Navigator.of(context).pop();
+        _confirmDeleteChannel(context, ch);
+      },
     );
 
     return Scaffold(
       appBar: AppBar(
+        leading: wideLayout
+            ? IconButton(
+                tooltip: _sidebarVisible ? 'Ocultar panel' : 'Mostrar panel',
+                onPressed: () => setState(() => _sidebarVisible = !_sidebarVisible),
+                icon: Icon(
+                  _sidebarVisible
+                      ? Icons.keyboard_arrow_left_outlined
+                      : Icons.keyboard_arrow_right_outlined,
+                ),
+              )
+            : null,
         title: Row(
           children: <Widget>[
             Container(
@@ -307,52 +443,65 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Center(
-              child: Column(
+          // User avatar + info
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: AppTheme.primaryOrange,
+                child: Text(
+                  (auth.username ?? '?').substring(0, 1).toUpperCase(),
+                  style: const TextStyle(
+                    color: AppTheme.primaryOrangeForeground,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
                     auth.username ?? 'Invitado',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   if (auth.role != null)
-                    Text(auth.role!, style: Theme.of(context).textTheme.bodySmall),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryOrange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        auth.role!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppTheme.primaryOrange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                 ],
               ),
-            ),
+            ],
           ),
-          TextButton(
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: 'Cerrar sesión',
             onPressed: () => _handleLogout(context),
-            child: const Text('Salir'),
+            icon: const Icon(Icons.logout_outlined),
           ),
-          if (wideLayout)
-            IconButton(
-              tooltip: _sidebarVisible ? 'Ocultar panel' : 'Mostrar panel',
-              onPressed: () => setState(() => _sidebarVisible = !_sidebarVisible),
-              icon: Icon(
-                _sidebarVisible
-                    ? Icons.keyboard_arrow_right_outlined
-                    : Icons.keyboard_arrow_left_outlined,
-              ),
-            )
-          else
-            Builder(
-              builder: (BuildContext ctx) => IconButton(
-                tooltip: 'Panel lateral',
-                onPressed: () => Scaffold.of(ctx).openEndDrawer(),
-                icon: const Icon(Icons.menu_outlined),
-              ),
-            ),
           const SizedBox(width: 4),
         ],
       ),
-      endDrawer: wideLayout
+      drawer: wideLayout
           ? null
           : Drawer(child: sidebar),
-      body: LayoutBuilder(
+      body: Stack(
+        children: <Widget>[
+          LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final Widget chatArea = _ChatPanel(
             auth: auth,
@@ -374,33 +523,57 @@ class _ChatScreenState extends State<ChatScreen> {
           if (wideLayout) {
             return Row(
               children: <Widget>[
-                Expanded(child: panel),
                 if (_sidebarVisible) ...<Widget>[
-                  _SidebarResizer(
-                    onDrag: (double delta) {
-                      setState(() {
-                        _sidebarWidth = (_sidebarWidth - delta).clamp(240.0, 420.0);
-                      });
-                    },
-                  ),
                   SizedBox(
                     width: _sidebarWidth,
                     child: Container(
                       decoration: BoxDecoration(
                         border: Border(
-                          left: BorderSide(color: Theme.of(context).dividerColor),
+                          right: BorderSide(color: Theme.of(context).dividerColor),
                         ),
                       ),
                       child: sidebar,
                     ),
                   ),
+                  _SidebarResizer(
+                    onDrag: (double delta) {
+                      setState(() {
+                        _sidebarWidth = (_sidebarWidth + delta).clamp(240.0, 420.0);
+                      });
+                    },
+                  ),
                 ],
+                Expanded(child: panel),
               ],
             );
           }
 
           return panel;
         },
+      ),
+          // Alert overlay — stacked toasts, top-right
+          Positioned(
+            top: 16,
+            right: 16,
+            width: 320,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: _activeAlerts.map((_AlertItem item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Dismissible(
+                  key: ValueKey<int>(item.id),
+                  direction: DismissDirection.startToEnd,
+                  onDismissed: (_) => _removeAlert(item.id),
+                  child: _AlertToast(
+                    key: ValueKey<int>(item.id),
+                    message: item.message,
+                    onClose: () => _removeAlert(item.id),
+                  ),
+                ),
+              )).toList(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -425,6 +598,8 @@ class _Sidebar extends StatelessWidget {
     required this.onSelectChannel,
     required this.onCreateChannel,
     required this.onOpenDm,
+    required this.onRenameChannel,
+    required this.onDeleteChannel,
   });
 
   final AuthProvider auth;
@@ -433,6 +608,8 @@ class _Sidebar extends StatelessWidget {
   final ValueChanged<int> onSelectChannel;
   final VoidCallback onCreateChannel;
   final ValueChanged<String> onOpenDm;
+  final ValueChanged<ChatChannel> onRenameChannel;
+  final ValueChanged<ChatChannel> onDeleteChannel;
 
   @override
   Widget build(BuildContext context) {
@@ -441,112 +618,127 @@ class _Sidebar extends StatelessWidget {
     final List<ChatChannel> dms = auth.dmChannels;
 
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(12),
+      child: Column(
         children: <Widget>[
-          _SidebarSection(
-            icon: Icons.monitor_heart_outlined,
-            title: 'Monitor del Sistema',
-            subtitle: 'CPU, RAM, Disco',
-            isSelected: activePanel == _MainPanel.monitor,
-            onTap: () => onSelectPanel(_MainPanel.monitor),
-          ),
-          const SizedBox(height: 8),
-          _SidebarSection(
-            icon: Icons.smart_toy_outlined,
-            title: 'Asistente IA',
-            subtitle: 'Chat con inteligencia artificial',
-            isSelected: activePanel == _MainPanel.ai,
-            onTap: () => onSelectPanel(_MainPanel.ai),
-          ),
-          const SizedBox(height: 8),
-          _SidebarSection(
-            icon: Icons.settings_outlined,
-            title: 'Configuracion',
-            subtitle: 'Tema, exportaciones',
-            isSelected: activePanel == _MainPanel.settings,
-            onTap: () => onSelectPanel(_MainPanel.settings),
-          ),
-          const SizedBox(height: 20),
-          _sectionHeader(context, 'CANALES', trailing: IconButton(
-            tooltip: 'Nuevo canal',
-            onPressed: onCreateChannel,
-            icon: const Icon(Icons.add_circle_outline),
-          )),
-          const SizedBox(height: 4),
-          if (groups.isEmpty)
-            _emptyHint(context, 'No hay canales')
-          else
-            ...groups.map(
-              (ChatChannel channel) => _SidebarChannel(
-                label: channel.name,
-                icon: channel.isPrivate ? Icons.lock_outline : Icons.tag,
-                isSelected: auth.selectedChannelId == channel.id,
-                onTap: () => onSelectChannel(channel.id),
-              ),
-            ),
-          const SizedBox(height: 20),
-          _sectionHeader(context, 'MENSAJES DIRECTOS'),
-          const SizedBox(height: 4),
-          if (dms.isEmpty)
-            _emptyHint(context, 'Sin mensajes directos')
-          else
-            ...dms.map(
-              (ChatChannel dm) => _SidebarChannel(
-                label: dm.dmOtherUser(myUsername),
-                icon: Icons.person_outline,
-                isSelected: auth.selectedChannelId == dm.id,
-                onTap: () => onSelectChannel(dm.id),
-              ),
-            ),
-          const SizedBox(height: 20),
-          _sectionHeader(context, 'USUARIOS ONLINE'),
-          const SizedBox(height: 4),
-          if (auth.onlineUsers.isEmpty)
-            _emptyHint(context, 'Nadie conectado')
-          else
-            ...auth.onlineUsers.map(
-              (String user) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                child: Material(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: user != myUsername ? () => onOpenDm(user) : null,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: Row(
-                        children: <Widget>[
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: AppTheme.online,
-                              shape: BoxShape.circle,
+          // ── Scrollable top section: channels, DMs, users ──
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              children: <Widget>[
+                _sectionHeader(context, 'CANALES', trailing: IconButton(
+                  tooltip: 'Nuevo canal',
+                  onPressed: onCreateChannel,
+                  icon: const Icon(Icons.add_circle_outline, size: 18),
+                )),
+                const SizedBox(height: 4),
+                if (groups.isEmpty)
+                  _emptyHint(context, 'No hay canales')
+                else
+                  ...groups.map(
+                    (ChatChannel channel) => _SidebarChannel(
+                      label: channel.name,
+                      icon: channel.isPrivate ? Icons.lock_outline : Icons.tag,
+                      isSelected: auth.selectedChannelId == channel.id,
+                      unreadCount: auth.unreadCounts[channel.id] ?? 0,
+                      onTap: () => onSelectChannel(channel.id),
+                      onRename: () => onRenameChannel(channel),
+                      onDelete: () => onDeleteChannel(channel),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                _sectionHeader(context, 'MENSAJES DIRECTOS'),
+                const SizedBox(height: 4),
+                if (dms.isEmpty)
+                  _emptyHint(context, 'Sin mensajes directos')
+                else
+                  ...dms.map(
+                    (ChatChannel dm) => _SidebarChannel(
+                      label: dm.dmOtherUser(myUsername),
+                      icon: Icons.person_outline,
+                      isSelected: auth.selectedChannelId == dm.id,
+                      unreadCount: auth.unreadCounts[dm.id] ?? 0,
+                      onTap: () => onSelectChannel(dm.id),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                _sectionHeader(context, 'USUARIOS ONLINE'),
+                const SizedBox(height: 4),
+                if (auth.onlineUsers.isEmpty)
+                  _emptyHint(context, 'Nadie conectado')
+                else
+                  ...auth.onlineUsers.map(
+                    (String user) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      child: Material(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: user != myUsername ? () => onOpenDm(user) : null,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            child: Row(
+                              children: <Widget>[
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: AppTheme.online,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    user,
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (user != myUsername)
+                                  Icon(
+                                    Icons.chat_bubble_outline,
+                                    size: 14,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              user,
-                              style: Theme.of(context).textTheme.bodySmall,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (user != myUsername)
-                            Icon(
-                              Icons.chat_bubble_outline,
-                              size: 14,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
+                const SizedBox(height: 12),
+              ],
             ),
+          ),
+          // ── Fixed bottom nav: Monitor, IA, Settings ──
+          Divider(height: 1, color: Theme.of(context).dividerColor),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Column(
+              children: <Widget>[
+                _NavButton(
+                  icon: Icons.monitor_heart_outlined,
+                  label: 'Monitor',
+                  isSelected: activePanel == _MainPanel.monitor,
+                  onTap: () => onSelectPanel(_MainPanel.monitor),
+                ),
+                _NavButton(
+                  icon: Icons.smart_toy_outlined,
+                  label: 'Asistente IA',
+                  isSelected: activePanel == _MainPanel.ai,
+                  onTap: () => onSelectPanel(_MainPanel.ai),
+                ),
+                _NavButton(
+                  icon: Icons.settings_outlined,
+                  label: 'Configuracion',
+                  isSelected: activePanel == _MainPanel.settings,
+                  onTap: () => onSelectPanel(_MainPanel.settings),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -579,32 +771,53 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
-class _SidebarSection extends StatelessWidget {
-  const _SidebarSection({
+class _NavButton extends StatelessWidget {
+  const _NavButton({
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.label,
     required this.isSelected,
     required this.onTap,
   });
 
   final IconData icon;
-  final String title;
-  final String subtitle;
+  final String label;
   final bool isSelected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ListTile(
-        dense: true,
-        leading: Icon(icon, color: AppTheme.primaryOrange),
-        tileColor: isSelected ? AppTheme.primaryOrange.withValues(alpha: 0.08) : null,
-        title: Text(title, style: Theme.of(context).textTheme.titleSmall),
-        subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+    return Material(
+      color: isSelected
+          ? AppTheme.primaryOrange.withValues(alpha: 0.10)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                icon,
+                size: 18,
+                color: isSelected
+                    ? AppTheme.primaryOrange
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: isSelected
+                      ? AppTheme.primaryOrange
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -616,12 +829,18 @@ class _SidebarChannel extends StatelessWidget {
     required this.icon,
     required this.isSelected,
     required this.onTap,
+    this.unreadCount = 0,
+    this.onRename,
+    this.onDelete,
   });
 
   final String label;
   final IconData icon;
   final bool isSelected;
   final VoidCallback onTap;
+  final int unreadCount;
+  final VoidCallback? onRename;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -659,6 +878,61 @@ class _SidebarChannel extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (unreadCount > 0 && !isSelected)
+                  Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryOrange,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      unreadCount > 99 ? '99+' : unreadCount.toString(),
+                      style: const TextStyle(
+                        color: AppTheme.primaryOrangeForeground,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                if (onRename != null || onDelete != null)
+                  PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    iconSize: 16,
+                    icon: Icon(
+                      Icons.more_vert,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    onSelected: (String value) {
+                      if (value == 'rename') onRename?.call();
+                      if (value == 'delete') onDelete?.call();
+                    },
+                    itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
+                      if (onRename != null)
+                        const PopupMenuItem<String>(
+                          value: 'rename',
+                          child: Row(
+                            children: <Widget>[
+                              Icon(Icons.edit_outlined, size: 16),
+                              SizedBox(width: 8),
+                              Text('Renombrar'),
+                            ],
+                          ),
+                        ),
+                      if (onDelete != null)
+                        const PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Row(
+                            children: <Widget>[
+                              Icon(Icons.delete_outline, size: 16, color: AppTheme.critical),
+                              SizedBox(width: 8),
+                              Text('Eliminar', style: TextStyle(color: AppTheme.critical)),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -769,7 +1043,25 @@ class _ChatPanel extends StatelessWidget {
         final Uint8List bytes = base64Decode(message.imageBase64!);
         return ClipRRect(
           borderRadius: BorderRadius.circular(10),
-          child: Image.memory(bytes, fit: BoxFit.cover),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 320),
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              frameBuilder: (BuildContext ctx, Widget child, int? frame, bool sync) {
+                return AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 150),
+                  child: frame == null
+                      ? const SizedBox(
+                          width: 200,
+                          height: 120,
+                          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      : child,
+                );
+              },
+            ),
+          ),
         );
       } catch (_) {
         return Text(
@@ -796,9 +1088,17 @@ class _ChatPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<ChatMessage> messages = auth.selectedMessages;
+    final ChatChannel? channel = auth.selectedChannel;
+    final bool isDm = channel?.isDm == true;
+    final String myUsername = auth.username ?? '';
 
     return Column(
       children: <Widget>[
+        if (isDm && channel != null)
+          _DmHeader(
+            otherUser: channel.dmOtherUser(myUsername),
+            isOnline: auth.onlineUsers.contains(channel.dmOtherUser(myUsername)),
+          ),
         Expanded(
           child: messages.isEmpty
               ? Center(
@@ -944,6 +1244,192 @@ class _ChatPanel extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DmHeader extends StatelessWidget {
+  const _DmHeader({required this.otherUser, required this.isOnline});
+
+  final String otherUser;
+  final bool isOnline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Stack(
+            children: <Widget>[
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: AppTheme.primaryOrange.withValues(alpha: 0.15),
+                child: Text(
+                  otherUser.isNotEmpty ? otherUser[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    color: AppTheme.primaryOrange,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: isOnline ? AppTheme.online : AppTheme.offline,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.surface,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(otherUser, style: Theme.of(context).textTheme.titleSmall),
+              Text(
+                isOnline ? 'En línea' : 'Desconectado',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: isOnline ? AppTheme.online : AppTheme.offline,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AlertItem {
+  _AlertItem({required this.id, required this.message});
+  final int id;
+  final String message;
+  Timer? timer;
+}
+
+class _AlertToast extends StatefulWidget {
+  const _AlertToast({super.key, required this.message, required this.onClose});
+
+  final String message;
+  final VoidCallback onClose;
+
+  @override
+  State<_AlertToast> createState() => _AlertToastState();
+}
+
+class _AlertToastState extends State<_AlertToast> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _slide;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _slide = Tween<Offset>(begin: const Offset(1.2, 0), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slide,
+      child: FadeTransition(
+        opacity: _fade,
+        child: Material(
+          elevation: 12,
+          borderRadius: BorderRadius.circular(14),
+          shadowColor: AppTheme.warning.withValues(alpha: 0.35),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppTheme.warning.withValues(alpha: 0.55),
+                width: 1.5,
+              ),
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warning.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_active_outlined,
+                    color: AppTheme.warning,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        'Alerta del sistema',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: AppTheme.warning,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(widget.message, style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: widget.onClose,
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.close,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

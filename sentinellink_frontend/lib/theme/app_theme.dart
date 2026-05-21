@@ -13,12 +13,12 @@ class AppTheme {
   static const Color offline = Color(0xFF94A3B8);
   static const Color warning = Color(0xFFF59E0B);
   static const Color critical = Color(0xFFEF4444);
-  static const Color darkBackground = Color(0xFF0A0A0A);
-  static const Color darkSurface = Color(0xFF141414);
-  static const Color darkSurfaceMuted = Color(0xFF1A1A1A);
-  static const Color darkBorder = Color(0xFF262626);
-  static const Color darkTextPrimary = Color(0xFFE5E5E5);
-  static const Color darkTextMuted = Color(0xFFA3A3A3);
+  static const Color darkBackground = Color(0xFF18181B);
+  static const Color darkSurface = Color(0xFF1F1F23);
+  static const Color darkSurfaceMuted = Color(0xFF27272A);
+  static const Color darkBorder = Color(0xFF3F3F46);
+  static const Color darkTextPrimary = Color(0xFFF4F4F5);
+  static const Color darkTextMuted = Color(0xFFA1A1AA);
 
   static ThemeData lightTheme() {
     final ColorScheme scheme = ColorScheme.fromSeed(

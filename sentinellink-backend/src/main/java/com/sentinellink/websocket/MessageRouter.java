@@ -50,6 +50,10 @@ public class MessageRouter {
                 return new RouteResult(MessageType.REGISTER_RESPONSE, authService.register(data), false);
             case CREATE_CHANNEL_REQUEST:
                 return new RouteResult(MessageType.CREATE_CHANNEL_RESPONSE, messageService.createChannel(data), false);
+            case RENAME_CHANNEL_REQUEST:
+                return new RouteResult(MessageType.RENAME_CHANNEL_RESPONSE, messageService.renameChannel(data), false);
+            case DELETE_CHANNEL_REQUEST:
+                return new RouteResult(MessageType.DELETE_CHANNEL_RESPONSE, messageService.deleteChannel(data), false);
             case CREATE_DM_REQUEST:
                 return new RouteResult(MessageType.CREATE_DM_RESPONSE, messageService.createDm(sender, data), false);
             case SEND_MESSAGE:

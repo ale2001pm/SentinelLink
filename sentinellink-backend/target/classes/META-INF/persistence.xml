@@ -11,7 +11,7 @@
         <properties>
             <!-- H2 Database Configuration -->
             <property name="javax.persistence.jdbc.driver" value="org.h2.Driver"/>
-            <property name="javax.persistence.jdbc.url" value="jdbc:h2:file:./data/sentinellink_db;DB_CLOSE_DELAY=10;DB_CLOSE_ON_EXIT=TRUE;MODE=MySQL"/>
+            <property name="javax.persistence.jdbc.url" value="jdbc:h2:file:C:/Users/ap827/Desktop/SentinelLink/data/sentinellink_db;DB_CLOSE_DELAY=10;DB_CLOSE_ON_EXIT=TRUE;MODE=MySQL"/>
             <property name="javax.persistence.jdbc.user" value="sa"/>
             <property name="javax.persistence.jdbc.password" value=""/>
 
