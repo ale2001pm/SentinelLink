@@ -63,6 +63,50 @@ public class ChannelRepository {
         }
     }
 
+    /** Returns only public (non-private) group channels. */
+    public List<Channel> findAllPublicGroupChannels() {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            return em.createQuery(
+                    "SELECT c FROM Channel c WHERE (c.channelType IS NULL OR c.channelType = 'GROUP') AND c.isPrivate = false ORDER BY c.id",
+                    Channel.class).getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    /** Returns public group channels + DM channels where username is a participant (excludes private groups). */
+    public List<Channel> findPublicChannelsForUser(String username) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            return em.createQuery(
+                    "SELECT c FROM Channel c WHERE " +
+                    "((c.channelType IS NULL OR c.channelType = 'GROUP') AND c.isPrivate = false) OR " +
+                    "(c.channelType = 'DM' AND (c.dmParticipant1 = :username OR c.dmParticipant2 = :username)) " +
+                    "ORDER BY c.id",
+                    Channel.class)
+                    .setParameter("username", username)
+                    .getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    /** Finds a channel by exact name (used for private channel search). */
+    public Optional<Channel> findByNameIgnoreCase(String name) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            List<Channel> results = em.createQuery(
+                    "SELECT c FROM Channel c WHERE LOWER(c.name) = LOWER(:name)", Channel.class)
+                    .setParameter("name", name)
+                    .setMaxResults(1)
+                    .getResultList();
+            return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+        } finally {
+            em.close();
+        }
+    }
+
     /** Returns only group channels (excludes DMs). */
     public List<Channel> findAllGroupChannels() {
         EntityManager em = JpaUtil.getEntityManager();

@@ -3,6 +3,9 @@ sentinellink-backend/data/
 sentinellink-backend/target/
 sentinellink-backend/.env
 
+# Email credentials — never commit
+sentinellink-backend/src/main/resources/email.properties
+
 # H2 local database files (safety net)
 *.mv.db
 *.trace.db

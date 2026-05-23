@@ -27,6 +27,12 @@ dependencies:
   # Charts for system monitor
   fl_chart: ^0.68.0
 
+  # Persistent local preferences (URL, sound toggle)
+  shared_preferences: ^2.2.0
+
+  # Audio playback for notification sounds
+  audioplayers: ^6.0.0
+
   # JSON serialization
   json_serializable: ^6.7.0
   json_annotation: ^4.8.1
@@ -40,3 +46,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/sounds/

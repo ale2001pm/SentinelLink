@@ -27,7 +27,7 @@ class ChatChannel {
 
   factory ChatChannel.fromJson(Map<String, dynamic> json) {
     return ChatChannel(
-      id: (json['id'] as num?)?.toInt() ?? 0,
+      id: (json['id'] as num?)?.toInt() ?? (json['channelId'] as num?)?.toInt() ?? 0,
       name: (json['name'] ?? '').toString(),
       isPrivate: json['private'] == true,
       channelType: (json['channelType'] ?? 'GROUP').toString(),

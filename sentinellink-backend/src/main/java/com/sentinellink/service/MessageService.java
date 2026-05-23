@@ -31,20 +31,32 @@ public class MessageService {
 
         String content = getStringOrEmpty(sendData, "content").trim();
         String imageData = getStringOrEmpty(sendData, "imageBase64").trim();
+        String fileBase64 = getStringOrEmpty(sendData, "fileBase64").trim();
+        String fileName = getStringOrEmpty(sendData, "fileName").trim();
         boolean isImage = !imageData.isEmpty();
-        if (!isImage && content.isEmpty()) {
+        boolean isFile = !fileBase64.isEmpty() && !fileName.isEmpty();
+        if (!isImage && !isFile && content.isEmpty()) {
             throw new IllegalArgumentException("El mensaje no puede estar vacio");
         }
 
         Channel channel = resolveChannel(sendData);
-        String messageType = isImage ? "IMAGE" : "TEXT";
-        if (isImage && content.isEmpty()) {
-            content = "";
+        String messageType;
+        String storedData;
+        if (isImage) {
+            messageType = "IMAGE";
+            storedData = imageData;
+        } else if (isFile) {
+            messageType = "FILE";
+            storedData = fileBase64;
+            content = fileName;
+        } else {
+            messageType = "TEXT";
+            storedData = null;
         }
         Message message = new Message(
                 content,
                 messageType,
-                isImage ? imageData : null,
+                storedData,
                 LocalDateTime.now(),
                 sender,
                 channel
@@ -116,8 +128,38 @@ public class MessageService {
         return channelRepository.findAllGroupChannels();
     }
 
+    public List<Channel> findAllPublicGroupChannels() {
+        return channelRepository.findAllPublicGroupChannels();
+    }
+
+    public List<Channel> findPublicChannelsForUser(String username) {
+        return channelRepository.findPublicChannelsForUser(username);
+    }
+
     public List<Channel> findChannelsForUser(String username) {
         return channelRepository.findChannelsForUser(username);
+    }
+
+    public JsonObject searchChannel(String name) {
+        JsonObject response = new JsonObject();
+        if (name == null || name.isBlank()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "Nombre de canal vacío");
+            return response;
+        }
+        Optional<Channel> opt = channelRepository.findByNameIgnoreCase(name.trim());
+        if (!opt.isPresent()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "Canal no encontrado: " + name.trim());
+            return response;
+        }
+        Channel c = opt.get();
+        response.addProperty("success", true);
+        response.addProperty("channelId", c.getId());
+        response.addProperty("name", c.getName());
+        response.addProperty("private", c.isPrivate());
+        response.addProperty("channelType", c.isDm() ? "DM" : "GROUP");
+        return response;
     }
 
     public Optional<Channel> getDefaultChannel() {
@@ -156,6 +198,7 @@ public class MessageService {
         response.addProperty("channelId", saved.getId());
         response.addProperty("name", saved.getName());
         response.addProperty("private", saved.isPrivate());
+        response.addProperty("channelType", "GROUP");
         return response;
     }
 

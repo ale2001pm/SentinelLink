@@ -1,0 +1,19 @@
+# Configuracion de correo electronico para alertas del sistema
+# ---------------------------------------------------------------
+# Copia este archivo como "email.properties" en la misma carpeta
+# y rellena los valores con tus credenciales reales.
+#
+# IMPORTANTE: email.properties esta en .gitignore — nunca lo subas al repositorio.
+
+# Servidor SMTP (por defecto Gmail)
+sentinellink.email.host=smtp.gmail.com
+sentinellink.email.port=587
+
+# Cuenta desde la que se envian las alertas
+# Usa una contrasena de aplicacion de Google, no tu contrasena normal.
+# Como generarla: Google Account -> Seguridad -> Verificacion en dos pasos -> Contrasenas de aplicacion
+sentinellink.email.from=tu_correo@gmail.com
+sentinellink.email.password=xxxx xxxx xxxx xxxx
+
+# Correo donde quieres recibir las alertas (puede ser el mismo)
+sentinellink.email.to=tu_correo@gmail.com

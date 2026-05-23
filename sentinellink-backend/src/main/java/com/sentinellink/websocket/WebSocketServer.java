@@ -18,6 +18,8 @@ public class WebSocketServer {
     private static final ConcurrentHashMap<String, String> SESSION_USERNAMES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, String> SESSION_ROLES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> SESSION_CHANNELS = new ConcurrentHashMap<>();
+    /** Members of private group channels — persists across reconnects within one server run. */
+    private static final ConcurrentHashMap<Long, Set<String>> PRIVATE_CHANNEL_MEMBERS = new ConcurrentHashMap<>();
 
     private static Server server;
 
@@ -69,6 +71,17 @@ public class WebSocketServer {
                 JsonObject responseData = result.getResponseData();
                 sendToSession(session, new SocketMessage(result.getResponseType(), responseData));
                 if (responseData.has("success") && responseData.get("success").getAsBoolean()) {
+                    // Track creator as first member of a private channel
+                    boolean isPrivate = responseData.has("private") && responseData.get("private").getAsBoolean();
+                    if (isPrivate) {
+                        long newChannelId = responseData.get("channelId").getAsLong();
+                        String creator = SESSION_USERNAMES.getOrDefault(session.getId(), "");
+                        if (!creator.isBlank()) {
+                            PRIVATE_CHANNEL_MEMBERS
+                                    .computeIfAbsent(newChannelId, k -> ConcurrentHashMap.newKeySet())
+                                    .add(creator);
+                        }
+                    }
                     sendChannelListToConnectedUsers();
                 }
                 return;
@@ -101,8 +114,18 @@ public class WebSocketServer {
                 return;
             }
 
-            if (incoming != null && (incoming.getType() == MessageType.UPDATE_THRESHOLDS
-                    || incoming.getType() == MessageType.TEST_ALERT)) {
+            if (incoming != null && incoming.getType() == MessageType.TEST_ALERT) {
+                sendToSession(session, new SocketMessage(result.getResponseType(), result.getResponseData()));
+                return;
+            }
+
+            if (incoming != null && incoming.getType() == MessageType.UPDATE_THRESHOLDS) {
+                // Broadcast new thresholds to ALL connected users so every panel stays in sync
+                broadcast(new SocketMessage(result.getResponseType(), result.getResponseData()));
+                return;
+            }
+
+            if (incoming != null && incoming.getType() == MessageType.SEARCH_CHANNEL_REQUEST) {
                 sendToSession(session, new SocketMessage(result.getResponseType(), result.getResponseData()));
                 return;
             }
@@ -211,7 +234,7 @@ public class WebSocketServer {
         }
     }
 
-    /** Sends each logged-in user their personalized channel list (group + their DMs). */
+    /** Sends each logged-in user their personalized channel list (public groups + their DMs). */
     private static void sendChannelListToConnectedUsers() {
         for (Session client : CONNECTED_CLIENTS) {
             if (!client.isOpen()) {
@@ -219,15 +242,15 @@ public class WebSocketServer {
             }
             String clientUsername = SESSION_USERNAMES.get(client.getId());
             List<Channel> channels = (clientUsername != null && !clientUsername.isBlank())
-                    ? ROUTER.getMessageService().findChannelsForUser(clientUsername)
-                    : ROUTER.getMessageService().findAllGroupChannels();
+                    ? ROUTER.getMessageService().findPublicChannelsForUser(clientUsername)
+                    : ROUTER.getMessageService().findAllPublicGroupChannels();
             sendToSession(client, ROUTER.createChannelListMessage(channels));
         }
     }
 
-    /** Sends only group channels to a single (unauthenticated) session. */
+    /** Sends only public group channels to a single (unauthenticated) session. */
     private static void sendGroupChannelListToSession(Session session) {
-        List<Channel> groupChannels = ROUTER.getMessageService().findAllGroupChannels();
+        List<Channel> groupChannels = ROUTER.getMessageService().findAllPublicGroupChannels();
         sendToSession(session, ROUTER.createChannelListMessage(groupChannels));
     }
 
@@ -279,6 +302,14 @@ public class WebSocketServer {
         }
 
         SESSION_CHANNELS.put(session.getId(), channel.getId());
+
+        // Track membership for private group channels
+        if (channel.isPrivate() && !channel.isDm() && username != null) {
+            PRIVATE_CHANNEL_MEMBERS
+                    .computeIfAbsent(channel.getId(), k -> ConcurrentHashMap.newKeySet())
+                    .add(username);
+        }
+
         sendToSession(session, ROUTER.createMessageHistoryMessage(
                 channel,
                 ROUTER.getMessageService().findMessagesByChannelId(channel.getId())));
@@ -322,8 +353,12 @@ public class WebSocketServer {
                 boolean isParticipant = clientUsername.equalsIgnoreCase(channel.getDmParticipant1())
                         || clientUsername.equalsIgnoreCase(channel.getDmParticipant2());
                 if (!isParticipant) continue;
+            } else if (channel != null && channel.isPrivate()) {
+                // Private group channel: only deliver to known members
+                Set<String> members = PRIVATE_CHANNEL_MEMBERS.get(channel.getId());
+                if (members == null || members.stream().noneMatch(m -> m.equalsIgnoreCase(clientUsername))) continue;
             }
-            // Group channel: deliver to every logged-in user.
+            // Public group channel: deliver to every logged-in user.
 
             try {
                 client.getBasicRemote().sendText(payload);

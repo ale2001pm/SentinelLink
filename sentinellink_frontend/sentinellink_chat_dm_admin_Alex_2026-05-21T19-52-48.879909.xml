@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<chat channel="dm:admin:Alex">
+  <message>
+    <sender>admin</sender>
+    <content>hola</content>
+    <timestamp>2026-05-21T19:38:49.261559</timestamp>
+  </message>
+</chat>

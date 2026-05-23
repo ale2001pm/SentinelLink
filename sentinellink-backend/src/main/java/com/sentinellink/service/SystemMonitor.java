@@ -38,6 +38,9 @@ public class SystemMonitor {
     private boolean cpuAlertActive;
     private boolean ramAlertActive;
     private boolean diskAlertActive;
+    private boolean cpuWarningActive;
+    private boolean ramWarningActive;
+    private boolean diskWarningActive;
 
     public SystemMonitor(MessageService messageService,
                          double cpuThreshold,
@@ -87,6 +90,9 @@ public class SystemMonitor {
         cpuAlertActive = false;
         ramAlertActive = false;
         diskAlertActive = false;
+        cpuWarningActive = false;
+        ramWarningActive = false;
+        diskWarningActive = false;
         LOGGER.info("Thresholds updated: cpu>{} ram>{} disk>{}", cpuThreshold, ramThreshold, diskThreshold);
     }
 
@@ -163,33 +169,73 @@ public class SystemMonitor {
     }
 
     private void evaluateAndBroadcastAlerts(SystemMetricsSnapshot snapshot) {
-        checkThreshold("CPU", snapshot.cpuPercent, cpuThreshold, cpuAlertActive, active -> cpuAlertActive = active);
-        checkThreshold("RAM", snapshot.ramPercent, ramThreshold, ramAlertActive, active -> ramAlertActive = active);
-        checkThreshold("DISCO", snapshot.diskPercent, diskThreshold, diskAlertActive, active -> diskAlertActive = active);
+        checkThreshold("CPU",   snapshot.cpuPercent,  cpuThreshold,
+                cpuAlertActive,   a -> cpuAlertActive = a,
+                cpuWarningActive, w -> cpuWarningActive = w);
+        checkThreshold("RAM",   snapshot.ramPercent,  ramThreshold,
+                ramAlertActive,   a -> ramAlertActive = a,
+                ramWarningActive, w -> ramWarningActive = w);
+        checkThreshold("DISCO", snapshot.diskPercent, diskThreshold,
+                diskAlertActive,  a -> diskAlertActive = a,
+                diskWarningActive,w -> diskWarningActive = w);
     }
 
     private void checkThreshold(String metricName,
                                 double currentValue,
                                 double threshold,
-                                boolean active,
-                                ThresholdFlagSetter setter) {
+                                boolean alertActive,
+                                ThresholdFlagSetter alertSetter,
+                                boolean warningActive,
+                                ThresholdFlagSetter warningSetter) {
+        double warnLevel = threshold * 0.80;
+
         if (currentValue >= threshold) {
-            if (!active) {
-                setter.set(true);
-                SocketMessage alertMessage = new SocketMessage(
+            // Critical — send once when first crossed
+            if (!alertActive) {
+                alertSetter.set(true);
+                warningSetter.set(true); // warning subsumed by critical
+                SocketMessage msg = new SocketMessage(
                         MessageType.SYSTEM_ALERT,
                         messageService.createSystemAlert(
                                 metricName + " por encima del umbral: " + String.format("%.1f", currentValue) + "%",
+                                "critical",
+                                metricName.toLowerCase(),
+                                currentValue,
+                                threshold));
+                latestAlertMessage = msg;
+                WebSocketServer.broadcast(msg);
+                EmailService.sendThresholdAlert(metricName, currentValue, threshold);
+            }
+        } else if (currentValue >= warnLevel) {
+            // Approaching — clear critical, send warning once
+            if (alertActive) alertSetter.set(false);
+            if (!warningActive) {
+                warningSetter.set(true);
+                SocketMessage msg = new SocketMessage(
+                        MessageType.SYSTEM_ALERT,
+                        messageService.createSystemAlert(
+                                metricName + " aproximándose al umbral: " + String.format("%.1f", currentValue) + "%",
                                 "warning",
                                 metricName.toLowerCase(),
                                 currentValue,
                                 threshold));
-                latestAlertMessage = alertMessage;
-                WebSocketServer.broadcast(alertMessage);
-                EmailService.sendThresholdAlert(metricName, currentValue, threshold);
+                WebSocketServer.broadcast(msg);
             }
-        } else if (active) {
-            setter.set(false);
+        } else {
+            // Safe — send resolved once if any alert was active
+            if (alertActive || warningActive) {
+                alertSetter.set(false);
+                warningSetter.set(false);
+                SocketMessage msg = new SocketMessage(
+                        MessageType.SYSTEM_ALERT,
+                        messageService.createSystemAlert(
+                                metricName + " volvió a niveles normales: " + String.format("%.1f", currentValue) + "%",
+                                "resolved",
+                                metricName.toLowerCase(),
+                                currentValue,
+                                threshold));
+                WebSocketServer.broadcast(msg);
+            }
         }
     }
 

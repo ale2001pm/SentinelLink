@@ -68,6 +68,13 @@ public class MessageRouter {
                 return handleUpdateThresholds(data);
             case TEST_ALERT:
                 return handleTestAlert();
+            case CHANGE_PASSWORD_REQUEST:
+                return new RouteResult(MessageType.CHANGE_PASSWORD_RESPONSE,
+                        authService.changePassword(sender, data), false);
+            case SEARCH_CHANNEL_REQUEST:
+                String channelName = data.has("name") ? data.get("name").getAsString() : "";
+                return new RouteResult(MessageType.SEARCH_CHANNEL_RESPONSE,
+                        messageService.searchChannel(channelName), false);
             case AI_REQUEST:
                 return new RouteResult(MessageType.AI_RESPONSE, aiService.processPrompt(data), false);
             default:
@@ -97,15 +104,15 @@ public class MessageRouter {
 
     private RouteResult handleTestAlert() {
         SystemMonitor monitor = SystemMonitor.getInstance();
-        if (monitor != null) {
-            EmailService.sendTestAlert(
-                    monitor.getCpuThreshold(), monitor.getRamThreshold(), monitor.getDiskThreshold());
-        }
         SocketMessage testAlert = monitor != null
                 ? monitor.buildTestAlertMessage()
                 : new SocketMessage(MessageType.SYSTEM_ALERT,
                         messageService.createSystemAlert("Notificacion de prueba", "warning"));
         WebSocketServer.broadcast(testAlert);
+        if (monitor != null) {
+            EmailService.sendTestAlert(
+                    monitor.getCpuThreshold(), monitor.getRamThreshold(), monitor.getDiskThreshold());
+        }
         JsonObject ack = new JsonObject();
         ack.addProperty("success", true);
         return new RouteResult(MessageType.THRESHOLDS_RESPONSE, ack, false);

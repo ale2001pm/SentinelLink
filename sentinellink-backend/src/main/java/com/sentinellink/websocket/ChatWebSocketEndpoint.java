@@ -12,6 +12,9 @@ public class ChatWebSocketEndpoint {
 
     @OnOpen
     public void onOpen(Session session) {
+        // 16 MB max text message — large enough for base64-encoded files/images
+        session.setMaxTextMessageBufferSize(16 * 1024 * 1024);
+        session.setMaxBinaryMessageBufferSize(16 * 1024 * 1024);
         WebSocketServer.onOpen(session);
     }
 

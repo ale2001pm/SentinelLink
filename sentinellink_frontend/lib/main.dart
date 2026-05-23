@@ -6,18 +6,23 @@ import 'services/auth_provider.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 
-void main() {
-  runApp(const SentinelLinkApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final AuthProvider authProvider = AuthProvider();
+  await authProvider.initPreferences();
+  runApp(SentinelLinkApp(authProvider: authProvider));
 }
 
 class SentinelLinkApp extends StatelessWidget {
-  const SentinelLinkApp({super.key});
+  const SentinelLinkApp({super.key, required this.authProvider});
+
+  final AuthProvider authProvider;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: <ChangeNotifierProvider<dynamic>>[
-        ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
+        ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
         ChangeNotifierProvider<ThemeController>(create: (_) => ThemeController()),
       ],
       child: Consumer<ThemeController>(

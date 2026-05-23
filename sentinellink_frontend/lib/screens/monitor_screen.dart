@@ -102,42 +102,51 @@ class _MonitorPanelState extends State<MonitorPanel> {
                         if (metrics == null)
                           _buildWaiting(context)
                         else ...<Widget>[
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: _buildMetricCard(
-                                  context, 'CPU', Icons.speed,
-                                  metrics.cpuPercent, _cpuSlider,
-                                  const Color(0xFFFF6B35),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildMetricCard(
-                                  context, 'RAM', Icons.memory,
-                                  metrics.ramPercent, _ramSlider,
-                                  const Color(0xFF3B82F6),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildMetricCard(
-                                  context, 'Disco', Icons.storage,
-                                  metrics.diskPercent, _diskSlider,
-                                  AppTheme.online,
-                                ),
-                              ),
-                            ],
+                          LayoutBuilder(
+                            builder: (BuildContext ctx, BoxConstraints bc) {
+                              final bool wide = bc.maxWidth >= 480;
+                              final List<Widget> cards = <Widget>[
+                                _buildMetricCard(ctx, 'CPU', Icons.speed,
+                                    metrics.cpuPercent, _cpuSlider, const Color(0xFFFF6B35)),
+                                _buildMetricCard(ctx, 'RAM', Icons.memory,
+                                    metrics.ramPercent, _ramSlider, const Color(0xFF3B82F6)),
+                                _buildMetricCard(ctx, 'Disco', Icons.storage,
+                                    metrics.diskPercent, _diskSlider, AppTheme.online),
+                              ];
+                              if (wide) {
+                                return Row(
+                                  children: <Widget>[
+                                    Expanded(child: cards[0]),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: cards[1]),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: cards[2]),
+                                  ],
+                                );
+                              }
+                              return Column(
+                                children: <Widget>[
+                                  cards[0],
+                                  const SizedBox(height: 12),
+                                  cards[1],
+                                  const SizedBox(height: 12),
+                                  cards[2],
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 16),
                           if (history.length >= 2) ...<Widget>[
                             _buildChartCard(context, history),
                             const SizedBox(height: 16),
                           ],
-                          _buildThresholdEditor(context, auth),
-                          const SizedBox(height: 16),
+                          if (auth.role == 'ADMIN') ...<Widget>[
+                            _buildThresholdEditor(context, auth),
+                            const SizedBox(height: 16),
+                          ],
                           if (auth.systemAlertMessage != null &&
-                              auth.systemAlertMessage!.isNotEmpty)
+                              auth.systemAlertMessage!.isNotEmpty &&
+                              auth.systemAlertLevel != 'resolved')
                             _buildAlertBox(context, auth),
                         ],
                         const SizedBox(height: 96),
@@ -264,23 +273,26 @@ class _MonitorPanelState extends State<MonitorPanel> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Icon(icon, color: accentColor ?? color),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                Icon(icon, size: 18, color: accentColor ?? color),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'Umbral: ${threshold.toStringAsFixed(0)}%',
+                    '${threshold.toStringAsFixed(0)}%',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
                   ),
                 ),
@@ -556,23 +568,27 @@ class _MonitorPanelState extends State<MonitorPanel> {
   }
 
   Widget _buildAlertBox(BuildContext context, AuthProvider auth) {
+    final Color accent = auth.systemAlertLevel == 'critical'
+        ? AppTheme.critical
+        : const Color(0xFFF59E0B);
+    final IconData icon = auth.systemAlertLevel == 'critical'
+        ? Icons.error_outline
+        : Icons.warning_amber_outlined;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.critical.withValues(alpha: 0.1),
-        border: Border.all(color: AppTheme.critical, width: 2),
+        color: accent.withValues(alpha: 0.1),
+        border: Border.all(color: accent, width: 2),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: <Widget>[
-          const Icon(Icons.error_outline, color: AppTheme.critical),
+          Icon(icon, color: accent),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               auth.systemAlertMessage!,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppTheme.critical,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: accent),
             ),
           ),
         ],

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/ai_message.dart';
 import '../models/chat_channel.dart';
@@ -32,7 +33,9 @@ class AuthProvider extends ChangeNotifier {
   static const int _maxHistoryLength = 60;
 
   String? _systemAlertMessage;
+  String _systemAlertLevel = 'warning';
   int _systemAlertVersion = 0;
+  bool _isInitialAlert = true;
 
   double cpuThreshold = 80.0;
   double ramThreshold = 90.0;
@@ -48,12 +51,16 @@ class AuthProvider extends ChangeNotifier {
   Completer<int?>? _createDmCompleter;
   Completer<bool>? _renameChannelCompleter;
   Completer<bool>? _deleteChannelCompleter;
+  Completer<bool>? _changePasswordCompleter;
+  Completer<int?>? _searchChannelCompleter;
 
   String webSocketUrl = 'ws://localhost:8080/ws';
+  bool soundEnabled = true;
 
   SystemMetrics? get currentMetrics => _currentMetrics;
   List<SystemMetrics> get metricsHistory => List<SystemMetrics>.unmodifiable(_metricsHistory);
   String? get systemAlertMessage => _systemAlertMessage;
+  String get systemAlertLevel => _systemAlertLevel;
   int get systemAlertVersion => _systemAlertVersion;
   bool get isAiLoading => _isAiLoading;
   Map<int, int> get unreadCounts => Map<int, int>.unmodifiable(_unreadCounts);
@@ -81,6 +88,98 @@ class AuthProvider extends ChangeNotifier {
       if (channel.id == channelId) return channel;
     }
     return null;
+  }
+
+  Future<void> initPreferences() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    webSocketUrl = prefs.getString('wsUrl') ?? 'ws://localhost:8080/ws';
+    soundEnabled = prefs.getBool('soundEnabled') ?? true;
+  }
+
+  Future<void> setWebSocketUrl(String url) async {
+    webSocketUrl = url.trim();
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wsUrl', url.trim());
+    notifyListeners();
+  }
+
+  Future<void> setSoundEnabled(bool value) async {
+    soundEnabled = value;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('soundEnabled', value);
+    notifyListeners();
+  }
+
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (!_webSocketService.isConnected) {
+      errorMessage = 'No conectado al servidor';
+      notifyListeners();
+      return false;
+    }
+    errorMessage = null;
+    isLoading = true;
+    notifyListeners();
+    try {
+      final Completer<bool> completer = Completer<bool>();
+      _changePasswordCompleter = completer;
+      _webSocketService.send(
+        SocketMessage(
+          type: 'CHANGE_PASSWORD_REQUEST',
+          data: <String, dynamic>{
+            'currentPassword': currentPassword,
+            'newPassword': newPassword,
+          },
+        ),
+      );
+      return await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          errorMessage = 'Timeout al cambiar contraseña';
+          return false;
+        },
+      );
+    } catch (e) {
+      errorMessage = 'Error: $e';
+      return false;
+    } finally {
+      _changePasswordCompleter = null;
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Opens (or creates) a DM with [targetUser] and sends an invite message for [channelName].
+  Future<void> inviteToPrivateChannel(String channelName, String targetUser) async {
+    final int? dmId = await createDm(targetUser, switchChannel: false);
+    if (dmId == null) return;
+    _webSocketService.send(SocketMessage(
+      type: 'SEND_MESSAGE',
+      data: <String, dynamic>{
+        'channelId': dmId,
+        'content': '\u{1F512}INVITE:$channelName\nTe han invitado al canal privado «$channelName». Pulsa Unirse para entrar.',
+      },
+    ));
+  }
+
+  Future<int?> searchChannel(String name) async {
+    if (!_webSocketService.isConnected) return null;
+    errorMessage = null;
+    final Completer<int?> completer = Completer<int?>();
+    _searchChannelCompleter = completer;
+    _webSocketService.send(SocketMessage(
+      type: 'SEARCH_CHANNEL_REQUEST',
+      data: <String, dynamic>{'name': name.trim()},
+    ));
+    try {
+      return await completer.future.timeout(const Duration(seconds: 10),
+          onTimeout: () { errorMessage = 'Timeout buscando canal'; return null; });
+    } finally {
+      _searchChannelCompleter = null;
+      notifyListeners();
+    }
   }
 
   Future<bool> login({
@@ -192,6 +291,7 @@ class AuthProvider extends ChangeNotifier {
     _metricsHistory.clear();
     _systemAlertMessage = null;
     _systemAlertVersion = 0;
+    _isInitialAlert = true;
     _aiMessages.clear();
     _isAiLoading = false;
     cpuThreshold = 80.0;
@@ -271,7 +371,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<int?> createDm(String targetUser) async {
+  Future<int?> createDm(String targetUser, {bool switchChannel = true}) async {
     if (!_webSocketService.isConnected) {
       errorMessage = 'WebSocket no conectado';
       notifyListeners();
@@ -301,7 +401,7 @@ class AuthProvider extends ChangeNotifier {
         },
       );
 
-      if (channelId != null && channelId > 0) {
+      if (channelId != null && channelId > 0 && switchChannel) {
         await selectChannel(channelId);
       }
       return channelId;
@@ -341,6 +441,9 @@ class AuthProvider extends ChangeNotifier {
     final String trimmed = base64.trim();
     if (trimmed.isEmpty) return;
 
+    if (!_webSocketService.isConnected) {
+      throw StateError('WebSocket no conectado');
+    }
     final int? channelId = selectedChannelId ?? (channels.isNotEmpty ? channels.first.id : null);
     if (channelId == null) {
       errorMessage = 'No hay un canal activo';
@@ -354,6 +457,33 @@ class AuthProvider extends ChangeNotifier {
         data: <String, dynamic>{
           'channelId': channelId,
           'imageBase64': trimmed,
+        },
+      ),
+    );
+  }
+
+  Future<void> sendFileMessage(String fileName, String base64Data) async {
+    final String trimmed = base64Data.trim();
+    if (trimmed.isEmpty || fileName.isEmpty) return;
+
+    if (!_webSocketService.isConnected) {
+      throw StateError('WebSocket no conectado');
+    }
+    final int? channelId = selectedChannelId ?? (channels.isNotEmpty ? channels.first.id : null);
+    if (channelId == null) {
+      errorMessage = 'No hay un canal activo';
+      notifyListeners();
+      return;
+    }
+
+    _webSocketService.send(
+      SocketMessage(
+        type: 'SEND_MESSAGE',
+        data: <String, dynamic>{
+          'channelId': channelId,
+          'content': fileName,
+          'fileBase64': trimmed,
+          'fileName': fileName,
         },
       ),
     );
@@ -511,6 +641,14 @@ class AuthProvider extends ChangeNotifier {
           errorMessage = (msg.data['error'] ?? 'Error al crear canal').toString();
         } else {
           errorMessage = null;
+          final int newChId = _readInt(msg.data['channelId']);
+          final bool isPrivate = msg.data['private'] == true;
+          // Private channels are not included in broadcast CHANNEL_LIST — add locally
+          if (isPrivate && !channels.any((ChatChannel c) => c.id == newChId)) {
+            channels.add(ChatChannel.fromJson(Map<String, dynamic>.from(
+              msg.data.map((String k, dynamic v) => MapEntry(k, v)),
+            )));
+          }
         }
         final int channelId = _readInt(msg.data['channelId']);
         if (_createChannelCompleter != null && !_createChannelCompleter!.isCompleted) {
@@ -537,6 +675,7 @@ class AuthProvider extends ChangeNotifier {
           if (deleteSuccess && msg.data.containsKey('channelId')) {
             final int deletedId = _readInt(msg.data['channelId']);
             if (selectedChannelId == deletedId) selectedChannelId = null;
+            channels.removeWhere((ChatChannel c) => c.id == deletedId);
             _messagesByChannel.remove(deletedId);
           }
         }
@@ -562,11 +701,21 @@ class AuthProvider extends ChangeNotifier {
           ..addAll(_readStringList(msg.data['users']));
         break;
       case 'CHANNEL_LIST':
-        channels
-          ..clear()
-          ..addAll(_readChannelList(msg.data['channels']));
+        final List<ChatChannel> incoming = _readChannelList(msg.data['channels']);
+        // Keep private group channels the user has already joined locally —
+        // the server does not include them in broadcast CHANNEL_LIST updates.
+        final List<ChatChannel> privateKept = channels
+            .where((ChatChannel c) => c.isPrivate && !c.isDm)
+            .toList();
+        channels.clear();
+        channels.addAll(privateKept);
+        for (final ChatChannel ch in incoming) {
+          if (!channels.any((ChatChannel c) => c.id == ch.id)) {
+            channels.add(ch);
+          }
+        }
         if (selectedChannelId == null && channels.isNotEmpty) {
-          selectedChannelId ??= channels.first.id;
+          selectedChannelId = channels.first.id;
         }
         break;
       case 'MESSAGE_HISTORY':
@@ -593,14 +742,51 @@ class AuthProvider extends ChangeNotifier {
         }
         break;
       case 'SYSTEM_ALERT':
+        _systemAlertLevel = (msg.data['level'] ?? 'warning').toString();
         _systemAlertMessage = (msg.data['message'] ?? '').toString();
-        _systemAlertVersion++;
+        if (_isInitialAlert) {
+          // Suppress the alert replayed by the server on connect — it's not new
+          _isInitialAlert = false;
+        } else {
+          _systemAlertVersion++;
+        }
+        break;
+      case 'CHANGE_PASSWORD_RESPONSE':
+        final bool pwSuccess = msg.data['success'] == true;
+        if (!pwSuccess) {
+          errorMessage = (msg.data['error'] ?? 'Error al cambiar contraseña').toString();
+        } else {
+          errorMessage = null;
+        }
+        if (_changePasswordCompleter != null && !_changePasswordCompleter!.isCompleted) {
+          _changePasswordCompleter!.complete(pwSuccess);
+        }
         break;
       case 'THRESHOLDS_RESPONSE':
         if (msg.data.containsKey('cpuThreshold')) {
           cpuThreshold = _readDouble(msg.data['cpuThreshold'], cpuThreshold);
           ramThreshold = _readDouble(msg.data['ramThreshold'], ramThreshold);
           diskThreshold = _readDouble(msg.data['diskThreshold'], diskThreshold);
+        }
+        break;
+      case 'SEARCH_CHANNEL_RESPONSE':
+        final bool found = msg.data['success'] == true;
+        if (found) {
+          errorMessage = null;
+          final int cId = _readInt(msg.data['channelId']);
+          // Add to channel list if not already present
+          final bool exists = channels.any((ChatChannel c) => c.id == cId);
+          if (!exists) {
+            channels.add(ChatChannel.fromJson(Map<String, dynamic>.from(
+              msg.data.map((String k, dynamic v) => MapEntry(k, v)),
+            )));
+          }
+          selectedChannelId = cId;
+        } else {
+          errorMessage = (msg.data['error'] ?? 'Canal no encontrado').toString();
+        }
+        if (_searchChannelCompleter != null && !_searchChannelCompleter!.isCompleted) {
+          _searchChannelCompleter!.complete(found ? _readInt(msg.data['channelId']) : null);
         }
         break;
       case 'AI_RESPONSE':
@@ -635,7 +821,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String> exportSelectedChannelToXml() async {
+  Future<String> exportSelectedChannelToTxt() async {
     final ChatChannel? channel = selectedChannel;
     final List<ChatMessage> messages = selectedMessages;
     if (channel == null || messages.isEmpty) {
@@ -644,33 +830,66 @@ class AuthProvider extends ChangeNotifier {
 
     final String safeChannel = _sanitizeFileName(channel.name);
     final String timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final String fileName = 'sentinellink_chat_${safeChannel}_$timestamp.xml';
+    final String fileName = 'sentinellink_chat_${safeChannel}_$timestamp.txt';
     final String path = '${Directory.current.path}${Platform.pathSeparator}$fileName';
 
     final StringBuffer buffer = StringBuffer();
-    buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
-    buffer.writeln('<chat channel="${_escapeXml(channel.name)}">');
+    buffer.writeln('Canal: ${channel.name}');
+    buffer.writeln('Exportado: ${DateTime.now().toLocal()}');
+    buffer.writeln('─' * 40);
+    buffer.writeln();
     for (final ChatMessage message in messages) {
-      buffer.writeln('  <message>');
-      buffer.writeln('    <sender>${_escapeXml(message.sender)}</sender>');
-      buffer.writeln('    <content>${_escapeXml(message.content)}</content>');
-      buffer.writeln('    <timestamp>${message.timestamp.toIso8601String()}</timestamp>');
-      buffer.writeln('  </message>');
+      final DateTime local = message.timestamp.toLocal();
+      final String time =
+          '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+      if (message.messageType == 'IMAGE') {
+        buffer.writeln('[$time] ${message.sender}: [imagen]');
+      } else {
+        buffer.writeln('[$time] ${message.sender}: ${message.content}');
+      }
     }
-    buffer.writeln('</chat>');
 
     final File file = File(path);
     await file.writeAsString(buffer.toString());
     return path;
   }
 
-  String _escapeXml(String input) {
-    return input
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&apos;');
+  Future<String> exportAllChannelsToTxt(String destinationPath) async {
+    if (_messagesByChannel.isEmpty) {
+      throw StateError('No hay mensajes cargados para exportar');
+    }
+    final StringBuffer buffer = StringBuffer();
+    buffer.writeln('SentinelLink — Exportación de chats');
+    buffer.writeln('Exportado: ${DateTime.now().toLocal()}');
+    buffer.writeln('═' * 50);
+    buffer.writeln();
+
+    for (final ChatChannel channel in channels) {
+      final List<ChatMessage>? messages = _messagesByChannel[channel.id];
+      if (messages == null || messages.isEmpty) continue;
+      final String title = channel.isDm ? 'DM: ${channel.name}' : 'Canal: #${channel.name}';
+      buffer.writeln(title);
+      buffer.writeln('─' * 40);
+      for (final ChatMessage message in messages) {
+        final DateTime local = message.timestamp.toLocal();
+        final String time =
+            '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+            '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+        if (message.messageType == 'IMAGE') {
+          buffer.writeln('[$time] ${message.sender}: [imagen]');
+        } else if (message.messageType == 'FILE') {
+          buffer.writeln('[$time] ${message.sender}: [archivo: ${message.content}]');
+        } else {
+          buffer.writeln('[$time] ${message.sender}: ${message.content}');
+        }
+      }
+      buffer.writeln();
+    }
+
+    final File file = File(destinationPath);
+    await file.writeAsString(buffer.toString());
+    return destinationPath;
   }
 
   String _sanitizeFileName(String input) {

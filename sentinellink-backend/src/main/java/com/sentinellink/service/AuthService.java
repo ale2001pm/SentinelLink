@@ -63,6 +63,37 @@ public class AuthService {
         return response;
     }
 
+    public JsonObject changePassword(String username, JsonObject data) {
+        String currentPassword = getStringOrEmpty(data, "currentPassword");
+        String newPassword     = getStringOrEmpty(data, "newPassword");
+
+        JsonObject response = new JsonObject();
+        if (newPassword.length() < 4) {
+            response.addProperty("success", false);
+            response.addProperty("error", "La nueva contrasena debe tener al menos 4 caracteres");
+            return response;
+        }
+
+        Optional<User> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            response.addProperty("success", false);
+            response.addProperty("error", "Usuario no encontrado");
+            return response;
+        }
+
+        User user = userOpt.get();
+        if (!user.getPassword().equals(currentPassword)) {
+            response.addProperty("success", false);
+            response.addProperty("error", "Contrasena actual incorrecta");
+            return response;
+        }
+
+        user.setPassword(newPassword);
+        userRepository.save(user);
+        response.addProperty("success", true);
+        return response;
+    }
+
     private String getStringOrEmpty(JsonObject json, String key) {
         if (json == null || !json.has(key) || json.get(key).isJsonNull()) {
             return "";

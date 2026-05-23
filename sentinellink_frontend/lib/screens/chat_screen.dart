@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
+
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -26,8 +29,10 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final _SoundService _soundService = _SoundService();
   int _lastAlertVersion = 0;
   int _lastMessageCount = 0;
+  int? _lastMessageChannelId;
   _MainPanel _activePanel = _MainPanel.chat;
   double _sidebarWidth = 300;
   bool _sidebarVisible = true;
@@ -39,6 +44,7 @@ class _ChatScreenState extends State<ChatScreen> {
     for (final _AlertItem item in _activeAlerts) {
       item.timer?.cancel();
     }
+    _soundService.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -78,14 +84,48 @@ class _ChatScreenState extends State<ChatScreen> {
         _showErrorSnackBar(context, 'No se pudo leer la imagen');
         return;
       }
-      if (bytes.length > 1500000) {
-        _showErrorSnackBar(context, 'Imagen demasiado grande (max 1.5 MB)');
+      if (bytes.length > 5000000) {
+        _showErrorSnackBar(context, 'Imagen demasiado grande (max 5 MB)');
         return;
       }
       await auth.sendImageMessage(base64Encode(bytes));
     } catch (e) {
       if (!mounted) return;
       _showErrorSnackBar(context, 'Error enviando imagen: $e');
+    }
+  }
+
+  Future<void> _pickAndSendFile(BuildContext context) async {
+    final AuthProvider auth = context.read<AuthProvider>();
+    if (auth.selectedChannelId == null) {
+      _showErrorSnackBar(context, 'Selecciona un canal primero');
+      return;
+    }
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final PlatformFile file = result.files.first;
+      List<int>? bytes = file.bytes;
+      if (bytes == null && file.path != null) {
+        bytes = await File(file.path!).readAsBytes();
+      }
+      if (bytes == null || bytes.isEmpty) {
+        if (!mounted) return;
+        _showErrorSnackBar(this.context, 'No se pudo leer el archivo');
+        return;
+      }
+      if (bytes.length > 10000000) {
+        if (!mounted) return;
+        _showErrorSnackBar(this.context, 'Archivo demasiado grande (max 10 MB)');
+        return;
+      }
+      await auth.sendFileMessage(file.name, base64Encode(bytes));
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar(this.context, 'Error enviando archivo: $e');
     }
   }
 
@@ -96,14 +136,33 @@ class _ChatScreenState extends State<ChatScreen> {
   void _showSystemAlertIfNeeded(AuthProvider auth) {
     if (auth.systemAlertVersion == _lastAlertVersion) return;
     _lastAlertVersion = auth.systemAlertVersion;
+    final String level = auth.systemAlertLevel;
     final String? alert = auth.systemAlertMessage;
+
+    // Resolved — clear all active toasts immediately
+    if (level == 'resolved') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          for (final _AlertItem item in _activeAlerts) {
+            item.timer?.cancel();
+          }
+          _activeAlerts.clear();
+        });
+      });
+      return;
+    }
+
     if (alert == null || alert.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final int id = _alertIdCounter++;
-      final _AlertItem item = _AlertItem(id: id, message: alert);
-      item.timer = Timer(const Duration(seconds: 10), () => _removeAlert(id));
+      final int autoDispose = level == 'warning' ? 8 : 10;
+      final _AlertItem item = _AlertItem(id: id, message: alert, level: level);
+      item.timer = Timer(Duration(seconds: autoDispose), () => _removeAlert(id));
       setState(() => _activeAlerts.add(item));
+      final AuthProvider authForSound = context.read<AuthProvider>();
+      if (authForSound.soundEnabled) _soundService.playAlert();
     });
   }
 
@@ -119,8 +178,26 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _scrollToBottomIfNeeded(AuthProvider auth) {
+    final int? channelId = auth.selectedChannelId;
     final int count = auth.selectedMessages.length;
+
+    // Channel switched — reset baseline without playing sound
+    if (channelId != _lastMessageChannelId) {
+      _lastMessageChannelId = channelId;
+      _lastMessageCount = count;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_scrollController.hasClients &&
+            _scrollController.position.hasContentDimensions) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
+      });
+      return;
+    }
+
     if (count <= _lastMessageCount) return;
+    // Play sound only for genuinely new incoming messages (not history load)
+    if (_lastMessageCount > 0 && auth.soundEnabled) _soundService.playMessage();
     _lastMessageCount = count;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -159,14 +236,257 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _exportChat(BuildContext context) async {
+  Future<void> _showChangePasswordDialog(BuildContext context) async {
+    final AuthProvider auth = context.read<AuthProvider>();
+    final TextEditingController currentCtrl = TextEditingController();
+    final TextEditingController newCtrl = TextEditingController();
+    final TextEditingController confirmCtrl = TextEditingController();
+    bool canSubmit = false;
+
     try {
-      final String path = await context.read<AuthProvider>().exportSelectedChannelToXml();
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => StatefulBuilder(
+          builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
+            title: const Text('Cambiar contraseña'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                TextField(
+                  controller: currentCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña actual',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                  onChanged: (_) => setS(() => canSubmit = currentCtrl.text.isNotEmpty &&
+                      newCtrl.text.length >= 4 &&
+                      newCtrl.text == confirmCtrl.text),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: newCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nueva contraseña',
+                    prefixIcon: Icon(Icons.lock_reset_outlined),
+                  ),
+                  onChanged: (_) => setS(() => canSubmit = currentCtrl.text.isNotEmpty &&
+                      newCtrl.text.length >= 4 &&
+                      newCtrl.text == confirmCtrl.text),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmar nueva contraseña',
+                    prefixIcon: Icon(Icons.lock_reset_outlined),
+                  ),
+                  onChanged: (_) => setS(() => canSubmit = currentCtrl.text.isNotEmpty &&
+                      newCtrl.text.length >= 4 &&
+                      newCtrl.text == confirmCtrl.text),
+                ),
+              ],
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: canSubmit ? () => Navigator.pop(ctx, true) : null,
+                child: const Text('Cambiar'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (confirmed != true) return;
+      final bool ok = await auth.changePassword(
+        currentPassword: currentCtrl.text,
+        newPassword: newCtrl.text,
+      );
       if (!mounted) return;
-      _showInfoSnackBar(context, 'Chat exportado en: $path');
+      if (ok) {
+        _showInfoSnackBar(this.context, 'Contraseña cambiada correctamente');
+      } else {
+        _showErrorSnackBar(this.context, auth.errorMessage ?? 'Error al cambiar contraseña');
+      }
+    } finally {
+      currentCtrl.dispose();
+      newCtrl.dispose();
+      confirmCtrl.dispose();
+    }
+  }
+
+  Future<void> _showChangeUrlDialog(BuildContext context) async {
+    final AuthProvider auth = context.read<AuthProvider>();
+    final TextEditingController ctrl = TextEditingController(text: auth.webSocketUrl);
+    try {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: const Text('URL del servidor'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'WebSocket URL',
+              prefixIcon: Icon(Icons.cloud_outlined),
+              hintText: 'ws://192.168.1.1:8080/ws',
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      await auth.setWebSocketUrl(ctrl.text);
+      if (!mounted) return;
+      _showInfoSnackBar(this.context, 'URL guardada. Se aplicará en el próximo inicio de sesión.');
+    } finally {
+      ctrl.dispose();
+    }
+  }
+
+  Future<void> _exportChat(BuildContext context) async {
+    final AuthProvider auth = context.read<AuthProvider>();
+    try {
+      final String? path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Guardar exportación de chats',
+        fileName: 'sentinellink_chats.txt',
+        allowedExtensions: <String>['txt'],
+        type: FileType.custom,
+      );
+      if (path == null) {
+        if (kIsWeb && mounted) {
+          _showErrorSnackBar(this.context, 'Exportación a archivo no disponible en el navegador');
+        }
+        return;
+      }
+      await auth.exportAllChannelsToTxt(path);
+      if (!mounted) return;
+      _showInfoSnackBar(this.context, 'Chats exportados en: $path');
     } catch (e) {
       if (!mounted) return;
-      _showErrorSnackBar(context, 'No se pudo exportar: $e');
+      _showErrorSnackBar(this.context, 'No se pudo exportar: $e');
+    }
+  }
+
+  Future<void> _showInviteToChannelDialog(BuildContext context, ChatChannel channel) async {
+    final AuthProvider auth = context.read<AuthProvider>();
+    final TextEditingController ctrl = TextEditingController();
+    bool canSubmit = false;
+
+    try {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => StatefulBuilder(
+          builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
+            title: Text('Invitar a «${channel.name}»'),
+            content: TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Nombre de usuario',
+                prefixIcon: Icon(Icons.person_add_outlined),
+              ),
+              onChanged: (String v) => setS(() => canSubmit = v.trim().isNotEmpty),
+              onSubmitted: canSubmit ? (_) => Navigator.pop(dialogCtx, true) : null,
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: canSubmit ? () => Navigator.pop(dialogCtx, true) : null,
+                child: const Text('Invitar'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (confirmed != true) return;
+      await auth.inviteToPrivateChannel(channel.name, ctrl.text.trim());
+      if (!mounted) return;
+      _showInfoSnackBar(this.context, 'Invitación enviada a ${ctrl.text.trim()}');
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar(this.context, 'Error al invitar: $e');
+    } finally {
+      ctrl.dispose();
+    }
+  }
+
+  Future<void> _showSearchPrivateChannelDialog(BuildContext context) async {
+    final AuthProvider auth = context.read<AuthProvider>();
+    final TextEditingController ctrl = TextEditingController();
+    bool canSubmit = false;
+
+    try {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => StatefulBuilder(
+          builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
+            title: const Text('Buscar canal privado'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const Text(
+                  'Escribe el nombre exacto del canal privado para unirte.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre del canal',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                  onChanged: (String v) => setS(() => canSubmit = v.trim().isNotEmpty),
+                  onSubmitted: canSubmit ? (_) => Navigator.pop(dialogCtx, true) : null,
+                ),
+              ],
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: canSubmit ? () => Navigator.pop(dialogCtx, true) : null,
+                child: const Text('Buscar'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (confirmed != true) return;
+      final int? channelId = await auth.searchChannel(ctrl.text.trim());
+      if (!mounted) return;
+      if (channelId != null) {
+        auth.selectChannel(channelId);
+        _selectPanel(_MainPanel.chat);
+        _showInfoSnackBar(this.context, 'Canal encontrado y seleccionado');
+      } else {
+        _showErrorSnackBar(this.context, auth.errorMessage ?? 'Canal no encontrado');
+      }
+    } finally {
+      ctrl.dispose();
     }
   }
 
@@ -230,6 +550,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
 
       if (channelId != null) {
+        await auth.selectChannel(channelId);
         _selectPanel(_MainPanel.chat);
         _showInfoSnackBar(this.context, 'Canal creado correctamente');
       } else {
@@ -378,6 +699,14 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!wideLayout) Navigator.of(context).pop();
         _showCreateChannelDialog(context);
       },
+      onSearchPrivateChannel: () {
+        if (!wideLayout) Navigator.of(context).pop();
+        _showSearchPrivateChannelDialog(context);
+      },
+      onInviteToChannel: (ChatChannel ch) {
+        if (!wideLayout) Navigator.of(context).pop();
+        _showInviteToChannelDialog(context, ch);
+      },
       onOpenDm: (String user) {
         if (!wideLayout) Navigator.of(context).pop();
         _openDm(context, user);
@@ -509,6 +838,7 @@ class _ChatScreenState extends State<ChatScreen> {
             scrollController: _scrollController,
             onSend: () => _sendMessage(context),
             onPickImage: () => _pickAndSendImage(context),
+            onPickFile: () => _pickAndSendFile(context),
           );
 
           final Widget panel = switch (_activePanel) {
@@ -517,6 +847,8 @@ class _ChatScreenState extends State<ChatScreen> {
             _MainPanel.ai => const AIPanel(),
             _MainPanel.settings => _SettingsPanel(
                 onExport: () => _exportChat(context),
+                onChangePassword: () => _showChangePasswordDialog(context),
+                onChangeUrl: () => _showChangeUrlDialog(context),
               ),
           };
 
@@ -567,7 +899,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: _AlertToast(
                     key: ValueKey<int>(item.id),
                     message: item.message,
+                    level: item.level,
                     onClose: () => _removeAlert(item.id),
+                    onTap: () {
+                      _removeAlert(item.id);
+                      _selectPanel(_MainPanel.monitor);
+                    },
                   ),
                 ),
               )).toList(),
@@ -597,6 +934,8 @@ class _Sidebar extends StatelessWidget {
     required this.onSelectPanel,
     required this.onSelectChannel,
     required this.onCreateChannel,
+    required this.onSearchPrivateChannel,
+    required this.onInviteToChannel,
     required this.onOpenDm,
     required this.onRenameChannel,
     required this.onDeleteChannel,
@@ -607,6 +946,8 @@ class _Sidebar extends StatelessWidget {
   final ValueChanged<_MainPanel> onSelectPanel;
   final ValueChanged<int> onSelectChannel;
   final VoidCallback onCreateChannel;
+  final VoidCallback onSearchPrivateChannel;
+  final ValueChanged<ChatChannel> onInviteToChannel;
   final ValueChanged<String> onOpenDm;
   final ValueChanged<ChatChannel> onRenameChannel;
   final ValueChanged<ChatChannel> onDeleteChannel;
@@ -641,10 +982,24 @@ class _Sidebar extends StatelessWidget {
                       isSelected: auth.selectedChannelId == channel.id,
                       unreadCount: auth.unreadCounts[channel.id] ?? 0,
                       onTap: () => onSelectChannel(channel.id),
+                      onInvite: channel.isPrivate ? () => onInviteToChannel(channel) : null,
                       onRename: () => onRenameChannel(channel),
                       onDelete: () => onDeleteChannel(channel),
                     ),
                   ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      alignment: Alignment.centerLeft,
+                    ),
+                    icon: const Icon(Icons.search, size: 15),
+                    label: const Text('Buscar canal privado', style: TextStyle(fontSize: 12)),
+                    onPressed: onSearchPrivateChannel,
+                  ),
+                ),
                 const SizedBox(height: 16),
                 _sectionHeader(context, 'MENSAJES DIRECTOS'),
                 const SizedBox(height: 4),
@@ -830,6 +1185,7 @@ class _SidebarChannel extends StatelessWidget {
     required this.isSelected,
     required this.onTap,
     this.unreadCount = 0,
+    this.onInvite,
     this.onRename,
     this.onDelete,
   });
@@ -839,6 +1195,7 @@ class _SidebarChannel extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final int unreadCount;
+  final VoidCallback? onInvite;
   final VoidCallback? onRename;
   final VoidCallback? onDelete;
 
@@ -895,7 +1252,7 @@ class _SidebarChannel extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (onRename != null || onDelete != null)
+                if (onInvite != null || onRename != null || onDelete != null)
                   PopupMenuButton<String>(
                     padding: EdgeInsets.zero,
                     iconSize: 16,
@@ -905,10 +1262,22 @@ class _SidebarChannel extends StatelessWidget {
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     onSelected: (String value) {
+                      if (value == 'invite') onInvite?.call();
                       if (value == 'rename') onRename?.call();
                       if (value == 'delete') onDelete?.call();
                     },
                     itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
+                      if (onInvite != null)
+                        const PopupMenuItem<String>(
+                          value: 'invite',
+                          child: Row(
+                            children: <Widget>[
+                              Icon(Icons.person_add_outlined, size: 16),
+                              SizedBox(width: 8),
+                              Text('Invitar usuario'),
+                            ],
+                          ),
+                        ),
                       if (onRename != null)
                         const PopupMenuItem<String>(
                           value: 'rename',
@@ -971,19 +1340,64 @@ class _SidebarResizer extends StatelessWidget {
 }
 
 class _SettingsPanel extends StatelessWidget {
-  const _SettingsPanel({required this.onExport});
+  const _SettingsPanel({
+    required this.onExport,
+    required this.onChangePassword,
+    required this.onChangeUrl,
+  });
 
   final VoidCallback onExport;
+  final VoidCallback onChangePassword;
+  final VoidCallback onChangeUrl;
 
   @override
   Widget build(BuildContext context) {
     final ThemeController theme = context.watch<ThemeController>();
+    final AuthProvider auth = context.watch<AuthProvider>();
 
     return ListView(
       padding: const EdgeInsets.all(20),
       children: <Widget>[
         Text('Configuracion', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
+
+        // ── Cuenta ──
+        Text('Cuenta', style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        )),
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.lock_reset_outlined),
+            title: const Text('Cambiar contraseña'),
+            subtitle: const Text('Actualiza tu contraseña de acceso'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: onChangePassword,
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // ── Conexión ──
+        Text('Conexion', style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        )),
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.cloud_outlined),
+            title: const Text('URL del servidor'),
+            subtitle: Text(auth.webSocketUrl, overflow: TextOverflow.ellipsis),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: onChangeUrl,
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // ── Apariencia ──
+        Text('Apariencia', style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        )),
+        const SizedBox(height: 8),
         Card(
           child: ListTile(
             leading: const Icon(Icons.brightness_6_outlined),
@@ -995,12 +1409,36 @@ class _SettingsPanel extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
+
+        // ── Notificaciones ──
+        Text('Notificaciones', style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        )),
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.volume_up_outlined),
+            title: const Text('Sonido de notificaciones'),
+            subtitle: const Text('Reproduce un sonido al recibir alertas o mensajes'),
+            trailing: Switch(
+              value: auth.soundEnabled,
+              onChanged: (bool v) => auth.setSoundEnabled(v),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // ── Datos ──
+        Text('Datos', style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        )),
+        const SizedBox(height: 8),
         Card(
           child: ListTile(
             leading: const Icon(Icons.download_outlined),
-            title: const Text('Exportar chat a XML'),
-            subtitle: const Text('Guarda el chat actual en un archivo XML'),
+            title: const Text('Exportar todos los chats a TXT'),
+            subtitle: const Text('Guarda todos los canales y DMs en un archivo de texto'),
             onTap: onExport,
           ),
         ),
@@ -1024,6 +1462,7 @@ class _ChatPanel extends StatelessWidget {
     required this.scrollController,
     required this.onSend,
     required this.onPickImage,
+    required this.onPickFile,
   });
 
   final AuthProvider auth;
@@ -1031,10 +1470,20 @@ class _ChatPanel extends StatelessWidget {
   final ScrollController scrollController;
   final VoidCallback onSend;
   final VoidCallback onPickImage;
+  final VoidCallback onPickFile;
 
   String _formatTime(DateTime timestamp) {
     final DateTime local = timestamp.toLocal();
     return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  static const Set<String> _imageExtensions = <String>{
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+  };
+
+  bool _isImageFile(String fileName) {
+    final String ext = fileName.split('.').last.toLowerCase();
+    return _imageExtensions.contains(ext);
   }
 
   Widget _buildMessageBody(BuildContext context, ChatMessage message, bool isMine) {
@@ -1045,34 +1494,67 @@ class _ChatPanel extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400, maxHeight: 320),
-            child: Image.memory(
-              bytes,
-              fit: BoxFit.contain,
-              frameBuilder: (BuildContext ctx, Widget child, int? frame, bool sync) {
-                return AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 150),
-                  child: frame == null
-                      ? const SizedBox(
-                          width: 200,
-                          height: 120,
-                          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                        )
-                      : child,
-                );
-              },
-            ),
+            child: Image.memory(bytes, fit: BoxFit.contain),
           ),
         );
       } catch (_) {
         return Text(
           'Imagen no disponible',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: isMine
-                ? AppTheme.primaryOrangeForeground
-                : Theme.of(context).colorScheme.onSurface,
+            color: isMine ? AppTheme.primaryOrangeForeground : Theme.of(context).colorScheme.onSurface,
           ),
         );
       }
+    }
+
+    if (message.messageType == 'FILE' && message.imageBase64 != null) {
+      final String fileName = message.content;
+
+      // Image files: render inline
+      if (_isImageFile(fileName)) {
+        try {
+          final Uint8List bytes = base64Decode(message.imageBase64!);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400, maxHeight: 320),
+                  child: Image.memory(bytes, fit: BoxFit.contain),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                fileName,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: isMine
+                      ? AppTheme.primaryOrangeForeground.withValues(alpha: 0.75)
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          );
+        } catch (_) {}
+      }
+
+      // Non-image files: show save card
+      return _FileAttachmentCard(
+        fileName: fileName,
+        fileBase64: message.imageBase64!,
+        isMine: isMine,
+      );
+    }
+
+    // Invitation card — content starts with 🔒INVITE:<channelName>
+    const String invitePrefix = '\u{1F512}INVITE:';
+    if (message.content.startsWith(invitePrefix)) {
+      final int newline = message.content.indexOf('\n');
+      final String channelName = newline > invitePrefix.length
+          ? message.content.substring(invitePrefix.length, newline)
+          : message.content.substring(invitePrefix.length);
+      final String body = newline >= 0 ? message.content.substring(newline + 1) : '';
+      return _InviteCard(channelName: channelName, body: body, isMine: isMine);
     }
 
     return Text(
@@ -1233,6 +1715,11 @@ class _ChatPanel extends StatelessWidget {
                   onPressed: auth.selectedChannelId == null ? null : onPickImage,
                   icon: const Icon(Icons.image_outlined),
                 ),
+                IconButton(
+                  tooltip: 'Adjuntar archivo',
+                  onPressed: auth.selectedChannelId == null ? null : onPickFile,
+                  icon: const Icon(Icons.attach_file_outlined),
+                ),
                 const SizedBox(width: 6),
                 FilledButton.icon(
                   onPressed: auth.selectedChannelId == null ? null : onSend,
@@ -1319,17 +1806,26 @@ class _DmHeader extends StatelessWidget {
 }
 
 class _AlertItem {
-  _AlertItem({required this.id, required this.message});
+  _AlertItem({required this.id, required this.message, required this.level});
   final int id;
   final String message;
+  final String level; // 'critical', 'warning', 'resolved'
   Timer? timer;
 }
 
 class _AlertToast extends StatefulWidget {
-  const _AlertToast({super.key, required this.message, required this.onClose});
+  const _AlertToast({
+    super.key,
+    required this.message,
+    required this.level,
+    required this.onClose,
+    required this.onTap,
+  });
 
   final String message;
+  final String level;
   final VoidCallback onClose;
+  final VoidCallback onTap;
 
   @override
   State<_AlertToast> createState() => _AlertToastState();
@@ -1361,6 +1857,22 @@ class _AlertToastState extends State<_AlertToast> with SingleTickerProviderState
 
   @override
   Widget build(BuildContext context) {
+    final Color accent = switch (widget.level) {
+      'critical' => AppTheme.critical,
+      'warning'  => const Color(0xFFF59E0B),
+      _          => AppTheme.warning,
+    };
+    final IconData icon = switch (widget.level) {
+      'critical' => Icons.error_outline,
+      'warning'  => Icons.warning_amber_outlined,
+      _          => Icons.notifications_active_outlined,
+    };
+    final String title = switch (widget.level) {
+      'critical' => 'Alerta crítica — ver monitor',
+      'warning'  => 'Aviso del sistema — ver monitor',
+      _          => 'Alerta del sistema',
+    };
+
     return SlideTransition(
       position: _slide,
       child: FadeTransition(
@@ -1368,68 +1880,268 @@ class _AlertToastState extends State<_AlertToast> with SingleTickerProviderState
         child: Material(
           elevation: 12,
           borderRadius: BorderRadius.circular(14),
-          shadowColor: AppTheme.warning.withValues(alpha: 0.35),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: AppTheme.warning.withValues(alpha: 0.55),
-                width: 1.5,
+          shadowColor: accent.withValues(alpha: 0.35),
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: accent.withValues(alpha: 0.55), width: 1.5),
               ),
-            ),
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.warning.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, color: accent, size: 18),
                   ),
-                  child: const Icon(
-                    Icons.notifications_active_outlined,
-                    color: AppTheme.warning,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        'Alerta del sistema',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: AppTheme.warning,
-                          fontWeight: FontWeight.w700,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          title,
+                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: accent,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(widget.message, style: Theme.of(context).textTheme.bodySmall),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 6),
-                InkWell(
-                  onTap: widget.onClose,
-                  borderRadius: BorderRadius.circular(4),
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child: Icon(
-                      Icons.close,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        const SizedBox(height: 4),
+                        Text(widget.message, style: Theme.of(context).textTheme.bodySmall),
+                      ],
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: widget.onClose,
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(Icons.close, size: 16,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+class _InviteCard extends StatelessWidget {
+  const _InviteCard({
+    required this.channelName,
+    required this.body,
+    required this.isMine,
+  });
+
+  final String channelName;
+  final String body;
+  final bool isMine;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fg = isMine
+        ? AppTheme.primaryOrangeForeground
+        : Theme.of(context).colorScheme.onSurface;
+    final Color fgMuted = isMine
+        ? AppTheme.primaryOrangeForeground.withValues(alpha: 0.7)
+        : Theme.of(context).colorScheme.onSurfaceVariant;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.lock_outline, size: 16, color: fg),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Canal privado: $channelName',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: fg,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (body.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(body, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: fgMuted)),
+        ],
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: isMine
+                ? AppTheme.primaryOrangeForeground.withValues(alpha: 0.2)
+                : AppTheme.primaryOrange,
+            foregroundColor: isMine ? AppTheme.primaryOrangeForeground : AppTheme.primaryOrangeForeground,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          icon: const Icon(Icons.login, size: 16),
+          label: const Text('Unirse al canal'),
+          onPressed: () async {
+            final AuthProvider auth = context.read<AuthProvider>();
+            final int? channelId = await auth.searchChannel(channelName);
+            if (!context.mounted) return;
+            if (channelId != null) {
+              await auth.selectChannel(channelId);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Unido al canal «$channelName»'),
+                backgroundColor: AppTheme.primaryOrange,
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(16),
+              ));
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(auth.errorMessage ?? 'Canal no encontrado'),
+                backgroundColor: AppTheme.critical,
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(16),
+              ));
+            }
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _FileAttachmentCard extends StatelessWidget {
+  const _FileAttachmentCard({
+    required this.fileName,
+    required this.fileBase64,
+    required this.isMine,
+  });
+
+  final String fileName;
+  final String fileBase64;
+  final bool isMine;
+
+  IconData _iconForFile(String name) {
+    final String ext = name.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'pdf': return Icons.picture_as_pdf_outlined;
+      case 'doc':
+      case 'docx': return Icons.description_outlined;
+      case 'xls':
+      case 'xlsx': return Icons.table_chart_outlined;
+      case 'zip':
+      case 'rar':
+      case '7z': return Icons.folder_zip_outlined;
+      default: return Icons.insert_drive_file_outlined;
+    }
+  }
+
+  Future<void> _save(BuildContext context) async {
+    try {
+      final String? path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Guardar archivo',
+        fileName: fileName,
+      );
+      if (path == null) return;
+      final Uint8List bytes = base64Decode(fileBase64);
+      await File(path).writeAsBytes(bytes);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Guardado en: $path'),
+        backgroundColor: AppTheme.primaryOrange,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+      ));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error al guardar: $e'),
+        backgroundColor: AppTheme.critical,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fg = isMine
+        ? AppTheme.primaryOrangeForeground
+        : Theme.of(context).colorScheme.onSurface;
+    final Color fgMuted = isMine
+        ? AppTheme.primaryOrangeForeground.withValues(alpha: 0.65)
+        : Theme.of(context).colorScheme.onSurfaceVariant;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(_iconForFile(fileName), size: 28, color: fg),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                fileName,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: fg,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+              GestureDetector(
+                onTap: () => _save(context),
+                child: Text(
+                  'Guardar archivo',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: fgMuted,
+                    decoration: TextDecoration.underline,
+                    decorationColor: fgMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SoundService {
+  final AudioPlayer _alertPlayer = AudioPlayer();
+  final AudioPlayer _messagePlayer = AudioPlayer();
+
+  Future<void> playAlert() async {
+    try {
+      await _alertPlayer.play(AssetSource('sounds/popup.mp3'));
+    } catch (_) {}
+  }
+
+  Future<void> playMessage() async {
+    try {
+      await _messagePlayer.play(AssetSource('sounds/mensaje.mp3'));
+    } catch (_) {}
+  }
+
+  void dispose() {
+    _alertPlayer.dispose();
+    _messagePlayer.dispose();
   }
 }
