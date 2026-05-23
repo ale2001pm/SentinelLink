@@ -5,6 +5,7 @@ import com.sentinellink.model.User;
 import com.sentinellink.model.UserRole;
 import com.sentinellink.repository.UserRepository;
 import java.util.Optional;
+import org.mindrot.jbcrypt.BCrypt;
 
 public class AuthService {
 
@@ -21,7 +22,7 @@ public class AuthService {
         JsonObject response = new JsonObject();
         Optional<User> user = userRepository.findByUsername(username);
 
-        if (user.isPresent() && user.get().getPassword().equals(password)) {
+        if (user.isPresent() && BCrypt.checkpw(password, user.get().getPassword())) {
             response.addProperty("success", true);
             response.addProperty("role", user.get().getRole().name());
             response.addProperty("username", user.get().getUsername());
@@ -54,7 +55,7 @@ public class AuthService {
             return response;
         }
 
-        User user = new User(username, password, UserRole.USER, false);
+        User user = new User(username, BCrypt.hashpw(password, BCrypt.gensalt()), UserRole.USER, false);
         userRepository.save(user);
 
         response.addProperty("success", true);
@@ -82,13 +83,13 @@ public class AuthService {
         }
 
         User user = userOpt.get();
-        if (!user.getPassword().equals(currentPassword)) {
+        if (!BCrypt.checkpw(currentPassword, user.getPassword())) {
             response.addProperty("success", false);
             response.addProperty("error", "Contrasena actual incorrecta");
             return response;
         }
 
-        user.setPassword(newPassword);
+        user.setPassword(BCrypt.hashpw(newPassword, BCrypt.gensalt()));
         userRepository.save(user);
         response.addProperty("success", true);
         return response;

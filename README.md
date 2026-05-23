@@ -1,54 +1,51 @@
-# 🔗 SentinelLink - App de Comunicacion Interna
+# SentinelLink - App de Comunicacion Interna
 
-Repositorio oficial del proyecto **SentinelLink** - Manual vivo actualizado por fases de desarrollo
+Repositorio oficial del proyecto **SentinelLink** — TFG de DAM (Desarrollo de Aplicaciones Multiplataforma).
 
-## 📋 Resumen del Proyecto
+## Resumen del Proyecto
 
-**SentinelLink** es una aplicacion completa de comunicacion interna desarrollada como TFG de DAM (Desarrollo de Aplicaciones Multiplataforma).
+**SentinelLink** es una aplicacion completa de comunicacion interna desarrollada como TFG de DAM.
 
-- **Backend**: Java puro con WebSocket + base de datos H2
-- **Frontend**: Flutter (escritorio + movil)
-- **Comunicacion**: WebSocket con protocolo JSON
-- **Monitorizacion**: Metricas del sistema con OSHI
-- **IA**: Integracion con APIs externas
+- **Backend**: Java puro con WebSocket + base de datos H2 (JPA/Hibernate)
+- **Frontend**: Flutter (escritorio Windows + movil Android)
+- **Comunicacion**: WebSocket con protocolo JSON propio
+- **Seguridad**: Autenticacion con contrasenas hasheadas con BCrypt
+- **Monitorizacion**: Metricas del sistema en tiempo real con OSHI
+- **IA**: Integracion con Ollama (modelo local)
 
-## 📁 Estructura de Directorios
+## Estructura de Directorios
 
 ```
 SentinelLink/
-├── sentinellink-backend/       # Backend Java/Maven
+├── data/                           # Base de datos H2 (generada en tiempo de ejecucion)
+├── sentinellink-backend/           # Backend Java/Maven
 │   ├── src/
 │   │   ├── main/
 │   │   │   ├── java/com/sentinellink/
-│   │   │   │   ├── server/       # Servidor WebSocket
-│   │   │   │   ├── model/        # Entidades JPA
-│   │   │   │   ├── service/      # Logica de negocio
-│   │   │   │   ├── repository/   # Acceso a datos
-│   │   │   │   ├── websocket/    # Handlers WebSocket
-│   │   │   │   └── util/         # Utilidades
+│   │   │   │   ├── server/         # Servidor WebSocket (Main, WebSocketServer)
+│   │   │   │   ├── model/          # Entidades JPA (User, Channel, Message, ChannelUser)
+│   │   │   │   ├── service/        # Logica de negocio (Auth, Message, Monitor, AI...)
+│   │   │   │   ├── repository/     # Acceso a datos (User, Channel, Message repos)
+│   │   │   │   ├── websocket/      # Handlers y router WebSocket
+│   │   │   │   └── util/           # Utilidades (JpaUtil, H2ConsoleServer)
 │   │   │   └── resources/META-INF/
 │   │   │       └── persistence.xml
 │   │   └── test/
 │   └── pom.xml
 │
-└── sentinellink_frontend/       # Frontend Flutter
+└── sentinellink_frontend/          # Frontend Flutter
     ├── lib/
-    │   ├── screens/             # Pantallas UI
-    │   ├── widgets/             # Widgets personalizados
-    │   ├── models/              # Modelos de datos
-    │   ├── services/            # Logica de negocio
-    │   └── main.dart            # Punto de entrada
+    │   ├── screens/                # Pantallas UI (Login, Chat, Monitor, AI)
+    │   ├── widgets/                # Widgets personalizados
+    │   ├── models/                 # Modelos de datos (ChatChannel, ChatMessage...)
+    │   ├── services/               # Logica de negocio y estado (AuthProvider, WebSocket)
+    │   └── main.dart               # Punto de entrada
+    ├── assets/sounds/              # Sonidos de notificacion
     ├── pubspec.yaml
-    ├── analysis_options.yaml
-    └── README.md
-
+    └── analysis_options.yaml
 ```
 
-## Fase Actual: Fase 8 - Pulido final y pruebas
-
-**Objetivo**: Monitorización en tiempo real de CPU, RAM y Disco con alertas automáticas.
-
-## ✅ Progreso por Fases
+## Progreso por Fases
 
 ### Fase 1 - Inicializacion del Proyecto (Completada)
 
@@ -64,113 +61,90 @@ SentinelLink/
 ### Fase 2 - Base de Datos y Modelos (Completada)
 
 - [x] Entidades JPA implementadas: User, Channel, Message, ChannelUser
-- [x] Enum UserRole creado
-- [x] Repositorios implementados:
-    - [x] UserRepository (CRUD basico + findByUsername)
-    - [x] ChannelRepository (CRUD basico + findByName)
-    - [x] MessageRepository (save, findById, findAll, findByChannelId)
-- [x] H2 configurada en modo archivo (datos persistentes)
+- [x] Enum UserRole creado (ADMIN, USER)
+- [x] Repositorios implementados: UserRepository, ChannelRepository, MessageRepository
+- [x] H2 configurada en modo archivo (datos persistentes en `data/`)
 - [x] Consola H2 integrada en el arranque
-- [x] Datos iniciales al iniciar:
-    - [x] Canal por defecto: general
-    - [x] Usuario admin por defecto: admin
-- [x] Validacion de arranque realizada con conteos persistentes entre reinicios
+- [x] Datos iniciales al iniciar: canal general + usuario admin
 
 ### Fase 3 - Servidor WebSocket y Protocolo JSON (Completada)
 
-- [x] Clase WebSocketServer implementada y escuchando en puerto 8080
-- [x] Gestion de clientes conectados con estructura concurrente
+- [x] WebSocketServer escuchando en puerto 8080
+- [x] Gestion de clientes conectados con estructuras concurrentes
 - [x] Eventos implementados: onOpen, onMessage, onClose, onError
 - [x] Router de mensajes implementado (MessageRouter)
-- [x] Protocolo JSON definido con tipos:
-    - [x] LOGIN_REQUEST
-    - [x] LOGIN_RESPONSE
-    - [x] REGISTER_REQUEST
-    - [x] REGISTER_RESPONSE
-    - [x] SEND_MESSAGE
-    - [x] RECEIVE_MESSAGE
-    - [x] USER_LIST
-    - [x] SYSTEM_ALERT
-    - [x] AI_REQUEST
-    - [x] AI_RESPONSE
-- [x] Validacion E2E de parseo y respuesta JSON por WebSocket
+- [x] Protocolo JSON definido con tipos de mensaje
 
 ### Fase 4 - Autenticacion (Completada)
 
-- [x] Backend:
-    - [x] AuthService valida credenciales contra BD
-    - [x] Gestion de sesion del cliente WebSocket conectado
-    - [x] LOGIN_RESPONSE con exito o error
-- [x] Flutter:
-    - [x] LoginScreen implementada (usuario + contrasena + boton)
-    - [x] Conexion WebSocket al pulsar login
-    - [x] Envio de LOGIN_REQUEST
-    - [x] Navegacion a ChatScreen si LOGIN_RESPONSE.success es true
-- [x] Validacion E2E completada (backend responde LOGIN_RESPONSE correcto)
+- [x] AuthService valida credenciales contra BD
+- [x] LOGIN_RESPONSE con exito o error
+- [x] LoginScreen con usuario, contrasena y boton de login
+- [x] Navegacion automatica a ChatScreen si login correcto
 
-### Fase 5 - Chat en tiempo real (Completada)
+### Fase 5 - Chat en Tiempo Real (Completada)
 
-- [x] Backend:
-    - [x] MessageService guarda mensajes en BD y genera historial por canal
-    - [x] Lista de usuarios online actualizada al conectar y desconectar
-    - [x] USER_LIST, CHANNEL_LIST y MESSAGE_HISTORY enviados desde WebSocket
-    - [x] SEND_MESSAGE retransmitido solo a clientes del canal activo
-- [x] Flutter:
-    - [x] ChatScreen con sidebar de canales y usuarios online
-    - [x] Historial de mensajes por canal
-    - [x] Input para escribir y enviar mensajes
-    - [x] Recepcion en tiempo real por WebSocket
-- [x] Validacion funcional completada con dos clientes simultaneos
+- [x] MessageService guarda mensajes en BD y recupera historial por canal
+- [x] Lista de usuarios online actualizada al conectar y desconectar
+- [x] SEND_MESSAGE retransmitido solo a clientes del canal activo
+- [x] ChatScreen con sidebar de canales y usuarios online
+- [x] Historial de mensajes por canal
+- [x] Recepcion en tiempo real por WebSocket
 
 ### Fase 6 - Monitorizacion del Sistema (Completada)
 
-- [x] Backend:
-    - [x] SystemMonitor con recolección periódica de métricas (CPU, RAM, Disco) via OSHI
-    - [x] Broadcast de SYSTEM_METRICS cada intervalo configurable
-    - [x] Alertas automáticas cuando métricas superan umbrales
-    - [x] Persistencia de últimas métricas y alertas para nuevas sesiones
-    - [x] Propiedades JVM configurables para umbrales e intervalos
-- [x] Frontend:
-    - [x] MonitorScreen con visualización de barras de progreso por métrica
-    - [x] AuthProvider maneja SYSTEM_METRICS y SYSTEM_ALERT en tiempo real
-    - [x] SnackBars automáticas al recibir alertas del sistema
-    - [x] Navegación desde ChatScreen al Monitor (appbar + drawer)
-- [x] Protocolo:
-    - [x] MessageType.SYSTEM_METRICS agregado
-    - [x] Payloads de métricas: cpuPercent, ramPercent, diskPercent, timestamp
-    - [x] Payloads de alertas: message, level, metric, value, threshold
-- [x] Validacion E2E completada: metrics + alerts fluyendo en WebSocket
+- [x] SystemMonitor con recoleccion periodica de metricas (CPU, RAM, Disco) via OSHI
+- [x] Broadcast de SYSTEM_METRICS cada intervalo configurable
+- [x] Alertas automaticas cuando metricas superan umbrales configurables
+- [x] MonitorScreen con barras de progreso por metrica
+- [x] SnackBars automaticas al recibir alertas del sistema
 
 ### Fase 7 - Asistente IA (Completada)
 
-- [x] Backend con Ollama local (llama3.1) integrado
+- [x] Backend con Ollama local (llama3.1) integrado via API REST
 - [x] Panel de Asistente IA con historial de conversacion
-- [x] Manejo de errores de IA y mensaje de instalacion si falta Ollama
+- [x] Manejo de errores: mensaje informativo si Ollama no esta disponible
 
-### Fase 8 - Pulido final y pruebas (Completada)
+### Fase 8 - Canales Privados, DMs y Funcionalidades Avanzadas (Completada)
 
-- [x] Estetica basada en Figma (colores, layout, cards, sidebar y topbar)
-- [x] Dark mode con alternancia de tema
-- [x] Manejo de errores de conexion y credenciales
-- [x] Exportacion de chat a XML (desde la barra superior)
-- [x] Pruebas con multiples clientes simultaneos
-- [x] Documentacion actualizada
+- [x] Canales privados con control de acceso por miembros
+- [x] Sistema de invitaciones a canales privados via DM con boton "Unirse"
+- [x] Mensajes directos (DM) entre usuarios
+- [x] Envio y recepcion de archivos e imagenes
+- [x] Sonidos de notificacion al recibir mensajes
+- [x] Preferencias persistentes locales (URL del servidor, sonido on/off)
+- [x] Cambio de contrasena desde perfil de usuario
+- [x] Exportacion de chat a XML desde la barra superior
+- [x] Estetica pulida basada en Figma (dark mode, colores, layout)
+- [x] Alternancia de tema claro/oscuro
 
-### 📦 Dependencias
+### Fase 9 - Seguridad (Completada)
 
-**Backend (Maven - pom.xml)**:
-- H2 Database
-- Hibernate + JPA
-- Jakarta WebSocket
-- OSHI (Monitorizacion del sistema)
-- Gson (Procesamiento JSON)
-- SLF4J + Logback (Logging)
+- [x] Contrasenas hasheadas con BCrypt (jbcrypt 0.4) — nunca en texto plano
+- [x] Hash aplicado en registro, cambio de contrasena y datos iniciales
+- [x] Verificacion segura en login con BCrypt.checkpw
 
-**Frontend (Flutter - pubspec.yaml)**:
-- web_socket_channel
-- provider (Gestion de estado)
-- http (Cliente)
-- json_serializable, json_annotation
+## Dependencias
+
+**Backend (Maven)**:
+- `com.h2database:h2` — base de datos embebida en archivo
+- `org.hibernate:hibernate-core` + `hibernate-entitymanager` — ORM/JPA
+- `jakarta.websocket-api` + `tyrus-server` + `tyrus-container-grizzly-server` — WebSocket
+- `com.github.oshi:oshi-core` — metricas del sistema (CPU, RAM, Disco)
+- `com.google.code.gson:gson` — procesamiento JSON
+- `org.mindrot:jbcrypt` — hashing de contrasenas BCrypt
+- `com.sun.mail:jakarta.mail` — notificaciones por email
+- `org.slf4j:slf4j-api` + `ch.qos.logback:logback-classic` — logging
+
+**Frontend (Flutter)**:
+- `web_socket_channel` — comunicacion WebSocket
+- `provider` — gestion de estado
+- `http` — cliente HTTP
+- `file_picker` — seleccion de archivos e imagenes
+- `fl_chart` — graficos para el monitor del sistema
+- `shared_preferences` — preferencias persistentes locales
+- `audioplayers` — reproduccion de sonidos de notificacion
+- `json_serializable` + `json_annotation` — serializacion JSON
 
 ## Inicio Rapido
 
@@ -182,132 +156,92 @@ mvn clean compile
 mvn exec:java
 ```
 
-Para el Asistente IA (Fase 7) con Ollama, crea el archivo:
+La base de datos H2 se genera automaticamente en `SentinelLink/data/` al arrancar.
 
-```bash
-sentinellink-backend/.env
+**Credenciales por defecto** (creadas automaticamente si la BD esta vacia):
+
+| Usuario | Contrasena | Rol   |
+|---------|-----------|-------|
+| admin   | admin123  | ADMIN |
+| user    | user123   | USER  |
+
+**Consola H2** (para inspeccionar la BD en desarrollo):
+
+```
+http://192.168.1.44:8082
+JDBC URL: jdbc:h2:file:C:/Users/ap827/Desktop/SentinelLink/data/sentinellink_db
 ```
 
-Con estas variables:
+**Asistente IA con Ollama**:
 
-```bash
+Crea el archivo `sentinellink-backend/.env` con:
+
+```
 USE_OLLAMA=true
 OLLAMA_MODEL=llama3.1
 OLLAMA_API_URL=http://localhost:11434/api/chat
 ```
 
-Instala Ollama y descarga el modelo:
+Instala Ollama, descarga el modelo y arrancalo:
 
 ```bash
 ollama pull llama3.1
-```
-
-Si Ollama no esta corriendo, inicia:
-
-```bash
 ollama serve
 ```
 
-Los archivos de la base de datos H2 se generan automáticamente en:
-
-```bash
-sentinellink-backend/data/
-```
-
-**Nota**: La aplicación maneja automáticamente bloqueos de BD con reintentos inteligentes. No necesitas eliminar ninguna carpeta manualmente.
-
-**Configuración del Monitor** (Fase 6):
-
-Puedes controlar el monitor via propiedades JVM. Por defecto:
-- CPU threshold: 80%
-- RAM threshold: 90%
-- Disk threshold: 90%
-- Intervalo: 5 segundos
-
-Para sobrescribir:
+**Configuracion del Monitor** (umbrales por defecto: CPU 80%, RAM 90%, Disco 90%):
 
 ```bash
 set JAVA_TOOL_OPTIONS=-Dsentinellink.monitor.cpuThreshold=75 -Dsentinellink.monitor.ramThreshold=85
 mvn exec:java
 ```
 
-Credenciales iniciales por defecto para desarrollo:
+**Endpoint WebSocket**:
 
-- usuario: admin
-- contrasena: admin123
-
-Usuario adicional para pruebas de chat simultaneo:
-
-- usuario: user
-- contrasena: user123
-
-Endpoint WebSocket del backend:
-
-```bash
+```
 ws://localhost:8080/ws
 ```
-
-Exportacion de chat a XML:
-
-- Desde el chat, pulsa el icono de descarga en la barra superior.
-- El archivo se guarda en el directorio actual de ejecucion.
 
 ### Frontend
 
 ```bash
 cd sentinellink_frontend
 flutter pub get
-flutter run -d windows  # o macos, linux, android, ios
+flutter run -d windows   # escritorio Windows
+flutter run -d android   # movil Android
 ```
 
-Flujo de autenticacion en la app Flutter:
+Ejecutar siempre desde terminal, no desde el boton Run de VS Code (puede fallar por entorno CMake).
 
-- Pantalla inicial: LoginScreen
-- Credenciales de desarrollo: admin / admin123
-- Si login correcto: navegacion automatica a ChatScreen
-
-## 📅 Roadmap de Desarrollo
-
-- **Fase 1** ✅ Estructura y configuracion
-- **Fase 2** ✅ Base de datos y modelos
-- **Fase 3** ✅ Servidor WebSocket y protocolo JSON
-- **Fase 4** ✅ Autenticacion
-- **Fase 5** ✅ Chat en tiempo real
-- **Fase 6** ✅ Monitorizacion del sistema
-- **Fase 7** ✅ Asistente IA
-- **Fase 8** ✅ Pulido final y pruebas
-
-## Protocolo JSON (Fase 3 - Actualizado Fase 6)
+## Protocolo WebSocket JSON
 
 ```json
-{ "type": "LOGIN_REQUEST", "data": { "username": "", "password": "" } }
-{ "type": "LOGIN_RESPONSE", "data": { "success": true, "role": "user" } }
-{ "type": "SEND_MESSAGE", "data": { "channelId": 1, "content": "" } }
-{ "type": "RECEIVE_MESSAGE", "data": { "sender": "", "content": "", "timestamp": "" } }
-{ "type": "USER_LIST", "data": { "users": [] } }
-{ "type": "CHANNEL_LIST", "data": { "channels": [] } }
-{ "type": "MESSAGE_HISTORY", "data": { "channelId": 1, "messages": [] } }
-{ "type": "SYSTEM_METRICS", "data": { "cpuPercent": 25.5, "ramPercent": 60.2, "diskPercent": 45.0, "timestamp": 1778931858090 } }
-{ "type": "SYSTEM_ALERT", "data": { "message": "", "level": "warning", "metric": "cpu", "value": 85.0, "threshold": 80.0, "timestamp": 1778931858090 } }
-{ "type": "AI_REQUEST", "data": { "prompt": "" } }
-{ "type": "AI_RESPONSE", "data": { "response": "" } }
+{ "type": "LOGIN_REQUEST",          "data": { "username": "", "password": "" } }
+{ "type": "LOGIN_RESPONSE",         "data": { "success": true, "role": "admin", "username": "" } }
+{ "type": "REGISTER_REQUEST",       "data": { "username": "", "password": "" } }
+{ "type": "REGISTER_RESPONSE",      "data": { "success": true, "username": "" } }
+{ "type": "SEND_MESSAGE",           "data": { "channelId": 1, "content": "" } }
+{ "type": "RECEIVE_MESSAGE",        "data": { "sender": "", "content": "", "timestamp": "", "channelId": 1 } }
+{ "type": "USER_LIST",              "data": { "users": [] } }
+{ "type": "CHANNEL_LIST",           "data": { "channels": [] } }
+{ "type": "MESSAGE_HISTORY",        "data": { "channelId": 1, "messages": [] } }
+{ "type": "JOIN_CHANNEL",           "data": { "channelId": 1 } }
+{ "type": "CREATE_CHANNEL",         "data": { "name": "", "private": true } }
+{ "type": "CREATE_CHANNEL_RESPONSE","data": { "channelId": 1, "name": "", "private": true } }
+{ "type": "SEND_FILE",              "data": { "channelId": 1, "filename": "", "base64": "" } }
+{ "type": "RECEIVE_FILE",           "data": { "sender": "", "filename": "", "base64": "", "channelId": 1 } }
+{ "type": "SYSTEM_METRICS",         "data": { "cpuPercent": 25.5, "ramPercent": 60.2, "diskPercent": 45.0, "timestamp": 0 } }
+{ "type": "SYSTEM_ALERT",           "data": { "message": "", "level": "warning", "metric": "cpu", "value": 85.0, "threshold": 80.0 } }
+{ "type": "AI_REQUEST",             "data": { "prompt": "" } }
+{ "type": "AI_RESPONSE",            "data": { "response": "" } }
+{ "type": "CHANGE_PASSWORD",        "data": { "currentPassword": "", "newPassword": "" } }
 ```
-
-## 📘 Regla de Mantenimiento del README
-
-Este README es el manual vivo del proyecto.
-
-- Al finalizar cada fase completada, actualizar:
-    - Seccion de fase actual
-    - Checklist de progreso por fases
-    - Estado del roadmap
-    - Nuevas instrucciones de ejecucion, valores por defecto o notas para usuarios
 
 ## Notas
 
-- La base de datos persiste entre reinicios (H2 en archivo)
-- La arquitectura permite extender funcionalidades en las siguientes fases
-- Ambos proyectos siguen buenas practicas de sus respectivos ecosistemas
+- La base de datos persiste entre reinicios (H2 en archivo, `SentinelLink/data/`)
+- Para resetear la BD: parar el backend y borrar los archivos `.mv.db` y `.trace.db` de `data/`
+- Los canales privados usan un mapa en memoria para controlar quien recibe mensajes; al reiniciar el servidor los usuarios deben volver a unirse
+- Los archivos se transfieren en base64 por WebSocket; no hay limite configurado en la aplicacion (el limite practico lo impone la RAM disponible)
 
 ---
-

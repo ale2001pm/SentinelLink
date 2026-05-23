@@ -5,6 +5,7 @@ import com.sentinellink.model.User;
 import com.sentinellink.model.UserRole;
 import com.sentinellink.repository.ChannelRepository;
 import com.sentinellink.repository.UserRepository;
+import org.mindrot.jbcrypt.BCrypt;
 
 public class DataBootstrapService {
 
@@ -31,14 +32,14 @@ public class DataBootstrapService {
 
     private void ensureDefaultAdmin() {
         userRepository.findByUsername("admin").orElseGet(() -> {
-            User admin = new User("admin", "admin123", UserRole.ADMIN, false);
+            User admin = new User("admin", BCrypt.hashpw("admin123", BCrypt.gensalt()), UserRole.ADMIN, false);
             return userRepository.save(admin);
         });
     }
 
     private void ensureDefaultUser() {
         userRepository.findByUsername("user").orElseGet(() -> {
-            User user = new User("user", "user123", UserRole.USER, false);
+            User user = new User("user", BCrypt.hashpw("user123", BCrypt.gensalt()), UserRole.USER, false);
             return userRepository.save(user);
         });
     }
