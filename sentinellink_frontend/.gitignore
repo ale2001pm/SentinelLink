@@ -71,7 +71,6 @@ app.*.map.json
 **/ios/**/Runner/GeneratedPluginRegistrant.*
 
 # Web support:
-lib/generated_plugin_registrant.dart
 
 # Windows
 windows/flutter/generated_plugins.cmake

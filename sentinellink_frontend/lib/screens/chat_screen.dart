@@ -243,12 +243,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final TextEditingController confirmCtrl = TextEditingController();
     bool canSubmit = false;
 
-    try {
-      final bool? confirmed = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext ctx) => StatefulBuilder(
-          builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
-            title: const Text('Cambiar contraseña'),
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
+          title: const Text('Cambiar contraseña'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -301,31 +300,25 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         ),
-      );
+    );
 
-      if (confirmed != true) return;
-      final bool ok = await auth.changePassword(
-        currentPassword: currentCtrl.text,
-        newPassword: newCtrl.text,
-      );
-      if (!mounted) return;
-      if (ok) {
-        _showInfoSnackBar(this.context, 'Contraseña cambiada correctamente');
-      } else {
-        _showErrorSnackBar(this.context, auth.errorMessage ?? 'Error al cambiar contraseña');
-      }
-    } finally {
-      currentCtrl.dispose();
-      newCtrl.dispose();
-      confirmCtrl.dispose();
+    if (confirmed != true) return;
+    final bool ok = await auth.changePassword(
+      currentPassword: currentCtrl.text,
+      newPassword: newCtrl.text,
+    );
+    if (!mounted) return;
+    if (ok) {
+      _showInfoSnackBar(this.context, 'Contraseña cambiada correctamente');
+    } else {
+      _showErrorSnackBar(this.context, auth.errorMessage ?? 'Error al cambiar contraseña');
     }
   }
 
   Future<void> _showChangeUrlDialog(BuildContext context) async {
     final AuthProvider auth = context.read<AuthProvider>();
     final TextEditingController ctrl = TextEditingController(text: auth.webSocketUrl);
-    try {
-      final bool? confirmed = await showDialog<bool>(
+    final bool? confirmed = await showDialog<bool>(
         context: context,
         builder: (BuildContext ctx) => AlertDialog(
           title: const Text('URL del servidor'),
@@ -354,9 +347,6 @@ class _ChatScreenState extends State<ChatScreen> {
       await auth.setWebSocketUrl(ctrl.text);
       if (!mounted) return;
       _showInfoSnackBar(this.context, 'URL guardada. Se aplicará en el próximo inicio de sesión.');
-    } finally {
-      ctrl.dispose();
-    }
   }
 
   Future<void> _exportChat(BuildContext context) async {
@@ -425,8 +415,6 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       if (!mounted) return;
       _showErrorSnackBar(this.context, 'Error al invitar: $e');
-    } finally {
-      ctrl.dispose();
     }
   }
 
@@ -435,58 +423,54 @@ class _ChatScreenState extends State<ChatScreen> {
     final TextEditingController ctrl = TextEditingController();
     bool canSubmit = false;
 
-    try {
-      final bool? confirmed = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext ctx) => StatefulBuilder(
-          builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
-            title: const Text('Buscar canal privado'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                const Text(
-                  'Escribe el nombre exacto del canal privado para unirte.',
-                  style: TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: ctrl,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre del canal',
-                    prefixIcon: Icon(Icons.lock_outline),
-                  ),
-                  onChanged: (String v) => setS(() => canSubmit = v.trim().isNotEmpty),
-                  onSubmitted: canSubmit ? (_) => Navigator.pop(dialogCtx, true) : null,
-                ),
-              ],
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.pop(dialogCtx, false),
-                child: const Text('Cancelar'),
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
+          title: const Text('Buscar canal privado'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text(
+                'Escribe el nombre exacto del canal privado para unirte.',
+                style: TextStyle(fontSize: 13),
               ),
-              FilledButton(
-                onPressed: canSubmit ? () => Navigator.pop(dialogCtx, true) : null,
-                child: const Text('Buscar'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del canal',
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+                onChanged: (String v) => setS(() => canSubmit = v.trim().isNotEmpty),
+                onSubmitted: canSubmit ? (_) => Navigator.pop(dialogCtx, true) : null,
               ),
             ],
           ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: canSubmit ? () => Navigator.pop(dialogCtx, true) : null,
+              child: const Text('Buscar'),
+            ),
+          ],
         ),
-      );
+      ),
+    );
 
-      if (confirmed != true) return;
-      final int? channelId = await auth.searchChannel(ctrl.text.trim());
-      if (!mounted) return;
-      if (channelId != null) {
-        auth.selectChannel(channelId);
-        _selectPanel(_MainPanel.chat);
-        _showInfoSnackBar(this.context, 'Canal encontrado y seleccionado');
-      } else {
-        _showErrorSnackBar(this.context, auth.errorMessage ?? 'Canal no encontrado');
-      }
-    } finally {
-      ctrl.dispose();
+    if (confirmed != true) return;
+    final int? channelId = await auth.searchChannel(ctrl.text.trim());
+    if (!mounted) return;
+    if (channelId != null) {
+      auth.selectChannel(channelId);
+      _selectPanel(_MainPanel.chat);
+      _showInfoSnackBar(this.context, 'Canal encontrado y seleccionado');
+    } else {
+      _showErrorSnackBar(this.context, auth.errorMessage ?? 'Canal no encontrado');
     }
   }
 
@@ -496,68 +480,64 @@ class _ChatScreenState extends State<ChatScreen> {
     bool isPrivate = false;
     bool canSubmit = false;
 
-    try {
-      final bool? shouldCreate = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext ctx) {
-          return StatefulBuilder(
-            builder: (BuildContext dialogContext, void Function(void Function()) setS) {
-              return AlertDialog(
-                title: const Text('Nuevo canal'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre del canal',
-                        prefixIcon: Icon(Icons.tag),
-                      ),
-                      onChanged: (String value) => setS(() => canSubmit = value.trim().isNotEmpty),
+    final bool? shouldCreate = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext dialogContext, void Function(void Function()) setS) {
+            return AlertDialog(
+              title: const Text('Nuevo canal'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del canal',
+                      prefixIcon: Icon(Icons.tag),
                     ),
-                    const SizedBox(height: 12),
-                    SwitchListTile(
-                      value: isPrivate,
-                      onChanged: (bool value) => setS(() => isPrivate = value),
-                      title: const Text('Canal privado'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ],
-                ),
-                actions: <Widget>[
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                    child: const Text('Cancelar'),
+                    onChanged: (String value) => setS(() => canSubmit = value.trim().isNotEmpty),
                   ),
-                  FilledButton(
-                    onPressed: canSubmit ? () => Navigator.of(dialogContext).pop(true) : null,
-                    child: const Text('Crear'),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    value: isPrivate,
+                    onChanged: (bool value) => setS(() => isPrivate = value),
+                    title: const Text('Canal privado'),
+                    contentPadding: EdgeInsets.zero,
                   ),
                 ],
-              );
-            },
-          );
-        },
-      );
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: canSubmit ? () => Navigator.of(dialogContext).pop(true) : null,
+                  child: const Text('Crear'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
 
-      if (shouldCreate != true) return;
+    if (shouldCreate != true) return;
 
-      final int? channelId = await auth.createChannel(
-        name: nameController.text.trim(),
-        isPrivate: isPrivate,
-      );
+    final int? channelId = await auth.createChannel(
+      name: nameController.text.trim(),
+      isPrivate: isPrivate,
+    );
 
-      if (!mounted) return;
+    if (!mounted) return;
 
-      if (channelId != null) {
-        await auth.selectChannel(channelId);
-        _selectPanel(_MainPanel.chat);
-        _showInfoSnackBar(this.context, 'Canal creado correctamente');
-      } else {
-        _showErrorSnackBar(this.context, auth.errorMessage ?? 'No se pudo crear el canal');
-      }
-    } finally {
-      nameController.dispose();
+    if (channelId != null) {
+      await auth.selectChannel(channelId);
+      _selectPanel(_MainPanel.chat);
+      _showInfoSnackBar(this.context, 'Canal creado correctamente');
+    } else {
+      _showErrorSnackBar(this.context, auth.errorMessage ?? 'No se pudo crear el canal');
     }
   }
 
@@ -566,45 +546,41 @@ class _ChatScreenState extends State<ChatScreen> {
     final TextEditingController nameController = TextEditingController(text: channel.name);
     bool canSubmit = nameController.text.trim().isNotEmpty;
 
-    try {
-      final bool? confirmed = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext ctx) => StatefulBuilder(
-          builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
-            title: const Text('Renombrar canal'),
-            content: TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Nuevo nombre',
-                prefixIcon: Icon(Icons.tag),
-              ),
-              onChanged: (String v) => setS(() => canSubmit = v.trim().length >= 3),
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext dialogCtx, void Function(void Function()) setS) => AlertDialog(
+          title: const Text('Renombrar canal'),
+          content: TextField(
+            controller: nameController,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Nuevo nombre',
+              prefixIcon: Icon(Icons.tag),
             ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.pop(dialogCtx, false),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton(
-                onPressed: canSubmit ? () => Navigator.pop(dialogCtx, true) : null,
-                child: const Text('Renombrar'),
-              ),
-            ],
+            onChanged: (String v) => setS(() => canSubmit = v.trim().length >= 3),
           ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: canSubmit ? () => Navigator.pop(dialogCtx, true) : null,
+              child: const Text('Renombrar'),
+            ),
+          ],
         ),
-      );
+      ),
+    );
 
-      if (confirmed != true) return;
-      final bool ok = await auth.renameChannel(channel.id, nameController.text.trim());
-      if (!mounted) return;
-      if (ok) {
-        _showInfoSnackBar(this.context, 'Canal renombrado');
-      } else {
-        _showErrorSnackBar(this.context, auth.errorMessage ?? 'No se pudo renombrar');
-      }
-    } finally {
-      nameController.dispose();
+    if (confirmed != true) return;
+    final bool ok = await auth.renameChannel(channel.id, nameController.text.trim());
+    if (!mounted) return;
+    if (ok) {
+      _showInfoSnackBar(this.context, 'Canal renombrado');
+    } else {
+      _showErrorSnackBar(this.context, auth.errorMessage ?? 'No se pudo renombrar');
     }
   }
 
@@ -749,17 +725,19 @@ class _ChatScreenState extends State<ChatScreen> {
                 size: 18,
               ),
             ),
+            if (wideLayout) ...<Widget>[
+              const SizedBox(width: 10),
+              Text('SentinelLink', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(width: 12),
+              Container(width: 1, height: 20, color: Theme.of(context).dividerColor),
+            ],
             const SizedBox(width: 10),
-            Text('SentinelLink', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(width: 12),
-            Container(width: 1, height: 20, color: Theme.of(context).dividerColor),
-            const SizedBox(width: 12),
             Icon(
               auth.selectedChannel?.isPrivate == true ? Icons.lock_outline : Icons.tag,
               size: 20,
               color: AppTheme.primaryOrange,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Flexible(
               child: Text(
                 _activePanel == _MainPanel.chat
@@ -788,32 +766,34 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    auth.username ?? 'Invitado',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  if (auth.role != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryOrange.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        auth.role!,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppTheme.primaryOrange,
-                          fontWeight: FontWeight.w600,
+              if (wideLayout) ...<Widget>[
+                const SizedBox(width: 8),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      auth.username ?? 'Invitado',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    if (auth.role != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryOrange.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          auth.role!,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: AppTheme.primaryOrange,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
           ),
           const SizedBox(width: 8),

@@ -22,7 +22,7 @@ dependencies:
   http: ^1.1.0
 
   # File picker for image sending
-  file_picker: ^6.1.1
+  file_picker: ^8.0.0
 
   # Charts for system monitor
   fl_chart: ^0.68.0

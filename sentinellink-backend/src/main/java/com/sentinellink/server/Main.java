@@ -6,6 +6,9 @@ import com.sentinellink.service.SystemMonitor;
 import com.sentinellink.util.H2ConsoleServer;
 import com.sentinellink.util.JpaUtil;
 import com.sentinellink.websocket.WebSocketServer;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 
 /**
  * Main entry point for SentinelLink Backend Server
@@ -35,6 +38,7 @@ public class Main {
         System.out.println("Channels in DB: " + bootstrapService.channelCount());
 
         webSocketServer.start();
+        printNetworkUrls();
         MessageService messageService = new MessageService();
         SystemMonitor systemMonitor = new SystemMonitor(
                 messageService,
@@ -114,6 +118,26 @@ public class Main {
         } catch (Exception e) {
             // Silently ignore cleanup errors
             System.out.println("Note: Could not fully clean H2 lock files: " + e.getMessage());
+        }
+    }
+
+    private static void printNetworkUrls() {
+        System.out.println("WebSocket local:    ws://localhost:8080/ws");
+        try {
+            java.util.Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface iface = interfaces.nextElement();
+                if (iface.isLoopback() || !iface.isUp()) continue;
+                java.util.Enumeration<InetAddress> addresses = iface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress addr = addresses.nextElement();
+                    if (addr instanceof Inet4Address) {
+                        System.out.println("WebSocket en red:   ws://" + addr.getHostAddress() + ":8080/ws  ← usa esta URL en otros dispositivos");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("No se pudo detectar la IP de red local.");
         }
     }
 
