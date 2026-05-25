@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -821,41 +820,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String> exportSelectedChannelToTxt() async {
-    final ChatChannel? channel = selectedChannel;
-    final List<ChatMessage> messages = selectedMessages;
-    if (channel == null || messages.isEmpty) {
-      throw StateError('No hay mensajes para exportar');
-    }
-
-    final String safeChannel = _sanitizeFileName(channel.name);
-    final String timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final String fileName = 'sentinellink_chat_${safeChannel}_$timestamp.txt';
-    final String path = '${Directory.current.path}${Platform.pathSeparator}$fileName';
-
-    final StringBuffer buffer = StringBuffer();
-    buffer.writeln('Canal: ${channel.name}');
-    buffer.writeln('Exportado: ${DateTime.now().toLocal()}');
-    buffer.writeln('─' * 40);
-    buffer.writeln();
-    for (final ChatMessage message in messages) {
-      final DateTime local = message.timestamp.toLocal();
-      final String time =
-          '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
-          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-      if (message.messageType == 'IMAGE') {
-        buffer.writeln('[$time] ${message.sender}: [imagen]');
-      } else {
-        buffer.writeln('[$time] ${message.sender}: ${message.content}');
-      }
-    }
-
-    final File file = File(path);
-    await file.writeAsString(buffer.toString());
-    return path;
-  }
-
-  Future<String> exportAllChannelsToTxt(String destinationPath) async {
+  String buildExportContent() {
     if (_messagesByChannel.isEmpty) {
       throw StateError('No hay mensajes cargados para exportar');
     }
@@ -887,14 +852,9 @@ class AuthProvider extends ChangeNotifier {
       buffer.writeln();
     }
 
-    final File file = File(destinationPath);
-    await file.writeAsString(buffer.toString());
-    return destinationPath;
+    return buffer.toString();
   }
 
-  String _sanitizeFileName(String input) {
-    return input.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-  }
 
   List<Map<String, String>> _buildAiHistoryPayload() {
     final int start = _aiMessages.length > 12 ? _aiMessages.length - 12 : 0;
