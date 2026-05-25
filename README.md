@@ -7,11 +7,12 @@ Repositorio oficial del proyecto **SentinelLink** — TFG de DAM (Desarrollo de 
 **SentinelLink** es una aplicacion completa de comunicacion interna desarrollada como TFG de DAM.
 
 - **Backend**: Java puro con WebSocket + base de datos H2 (JPA/Hibernate)
-- **Frontend**: Flutter (escritorio Windows + movil Android)
+- **Frontend**: Flutter (escritorio Windows + movil Android + web)
 - **Comunicacion**: WebSocket con protocolo JSON propio
 - **Seguridad**: Autenticacion con contrasenas hasheadas con BCrypt
-- **Monitorizacion**: Metricas del sistema en tiempo real con OSHI
-- **IA**: Integracion con Ollama (modelo local)
+- **Monitorizacion**: Metricas del sistema en tiempo real con OSHI + historial de 60 muestras
+- **IA**: Integracion con Ollama (modelo local, historial de conversacion con contexto)
+- **Exportacion multiplataforma**: Descarga de chats y archivos en Windows, Android y Web
 
 ## Estructura de Directorios
 
@@ -37,8 +38,9 @@ SentinelLink/
     ├── lib/
     │   ├── screens/                # Pantallas UI (Login, Chat, Monitor, AI)
     │   ├── widgets/                # Widgets personalizados
-    │   ├── models/                 # Modelos de datos (ChatChannel, ChatMessage...)
+    │   ├── models/                 # Modelos de datos (ChatChannel, ChatMessage, SystemMetrics...)
     │   ├── services/               # Logica de negocio y estado (AuthProvider, WebSocket)
+    │   ├── utils/                  # Utilidades multiplataforma (download_helper)
     │   └── main.dart               # Punto de entrada
     ├── assets/sounds/              # Sonidos de notificacion
     ├── pubspec.yaml
@@ -90,19 +92,25 @@ SentinelLink/
 - [x] ChatScreen con sidebar de canales y usuarios online
 - [x] Historial de mensajes por canal
 - [x] Recepcion en tiempo real por WebSocket
+- [x] Contador de mensajes sin leer por canal (badgets en sidebar)
 
 ### Fase 6 - Monitorizacion del Sistema (Completada)
 
 - [x] SystemMonitor con recoleccion periodica de metricas (CPU, RAM, Disco) via OSHI
 - [x] Broadcast de SYSTEM_METRICS cada intervalo configurable
 - [x] Alertas automaticas cuando metricas superan umbrales configurables
-- [x] MonitorScreen con barras de progreso por metrica
-- [x] SnackBars automaticas al recibir alertas del sistema
+- [x] MonitorScreen con barras de progreso y graficos por metrica
+- [x] Historial en memoria de las ultimas 60 muestras de metricas
+- [x] SnackBars automaticas al recibir alertas del sistema (suprime la primera al conectar)
+- [x] Alertas incluyen metrica afectada, valor actual y umbral configurado
 
 ### Fase 7 - Asistente IA (Completada)
 
 - [x] Backend con Ollama local (llama3.1) integrado via API REST
 - [x] Panel de Asistente IA con historial de conversacion
+- [x] Contexto de conversacion enviado en cada mensaje (ultimos 12 mensajes)
+- [x] Timeout de 120 segundos para respuestas largas
+- [x] Peticiones a Ollama en hilo separado (no bloquea el WebSocket)
 - [x] Manejo de errores: mensaje informativo si Ollama no esta disponible
 
 ### Fase 8 - Canales Privados, DMs y Funcionalidades Avanzadas (Completada)
@@ -114,15 +122,26 @@ SentinelLink/
 - [x] Sonidos de notificacion al recibir mensajes
 - [x] Preferencias persistentes locales (URL del servidor, sonido on/off)
 - [x] Cambio de contrasena desde perfil de usuario
-- [x] Exportacion de chat a XML desde la barra superior
+- [x] Exportacion de chat a TXT desde la barra superior
 - [x] Estetica pulida basada en Figma (dark mode, colores, layout)
 - [x] Alternancia de tema claro/oscuro
+- [x] AppBar responsive (se adapta a pantallas movil y escritorio)
 
 ### Fase 9 - Seguridad (Completada)
 
 - [x] Contrasenas hasheadas con BCrypt (jbcrypt 0.4) — nunca en texto plano
 - [x] Hash aplicado en registro, cambio de contrasena y datos iniciales
 - [x] Verificacion segura en login con BCrypt.checkpw
+
+### Fase 10 - Multiplataforma y Mejoras Finales (Completada)
+
+- [x] Abstraccion de descarga de archivos multiplataforma (`download_helper`)
+  - Windows/macOS: dialogo nativo via FilePicker
+  - Android: guardado en almacenamiento externo via `path_provider`
+  - Web: descarga en navegador via API Blob + elemento `<a>`
+- [x] Exportacion de chats compatible con Web y Android sin dependencias nativas de IO
+- [x] Guardado de archivos recibidos compatible con todas las plataformas
+- [x] Dependencias `web` y `path_provider` añadidas al frontend
 
 ## Dependencias
 
@@ -145,6 +164,8 @@ SentinelLink/
 - `shared_preferences` — preferencias persistentes locales
 - `audioplayers` — reproduccion de sonidos de notificacion
 - `json_serializable` + `json_annotation` — serializacion JSON
+- `web` — interop con APIs del navegador (descarga de archivos en web)
+- `path_provider` — rutas del sistema de archivos en Android
 
 ## Inicio Rapido
 
@@ -168,25 +189,30 @@ La base de datos H2 se genera automaticamente en `SentinelLink/data/` al arranca
 **Consola H2** (para inspeccionar la BD en desarrollo):
 
 ```
-http://192.168.1.44:8082
-JDBC URL: jdbc:h2:file:C:/Users/ap827/Desktop/SentinelLink/data/sentinellink_db
+http://localhost:8082
+JDBC URL: jdbc:h2:file:./data/sentinellink_db
 ```
 
-**Asistente IA con Ollama**:
+**Asistente IA con Ollama** (activado por defecto):
 
-Crea el archivo `sentinellink-backend/.env` con:
-
-```
-USE_OLLAMA=true
-OLLAMA_MODEL=llama3.1
-OLLAMA_API_URL=http://localhost:11434/api/chat
-```
-
-Instala Ollama, descarga el modelo y arrancalo:
+Ollama esta habilitado por defecto. Solo es necesario tenerlo instalado y en ejecucion:
 
 ```bash
 ollama pull llama3.1
 ollama serve
+```
+
+Para deshabilitarlo, crea `sentinellink-backend/.env` con:
+
+```
+USE_OLLAMA=false
+```
+
+Para usar un modelo o URL diferente:
+
+```
+OLLAMA_MODEL=llama3.2
+OLLAMA_API_URL=http://localhost:11434/api/chat
 ```
 
 **Configuracion del Monitor** (umbrales por defecto: CPU 80%, RAM 90%, Disco 90%):
@@ -209,6 +235,7 @@ cd sentinellink_frontend
 flutter pub get
 flutter run -d windows   # escritorio Windows
 flutter run -d android   # movil Android
+flutter run -d chrome    # navegador web
 ```
 
 Ejecutar siempre desde terminal, no desde el boton Run de VS Code (puede fallar por entorno CMake).
@@ -226,15 +253,24 @@ Ejecutar siempre desde terminal, no desde el boton Run de VS Code (puede fallar 
 { "type": "CHANNEL_LIST",           "data": { "channels": [] } }
 { "type": "MESSAGE_HISTORY",        "data": { "channelId": 1, "messages": [] } }
 { "type": "JOIN_CHANNEL",           "data": { "channelId": 1 } }
-{ "type": "CREATE_CHANNEL",         "data": { "name": "", "private": true } }
-{ "type": "CREATE_CHANNEL_RESPONSE","data": { "channelId": 1, "name": "", "private": true } }
-{ "type": "SEND_FILE",              "data": { "channelId": 1, "filename": "", "base64": "" } }
-{ "type": "RECEIVE_FILE",           "data": { "sender": "", "filename": "", "base64": "", "channelId": 1 } }
+{ "type": "CREATE_CHANNEL_REQUEST", "data": { "name": "", "private": true } }
+{ "type": "CREATE_CHANNEL_RESPONSE","data": { "success": true, "channelId": 1, "name": "", "private": true } }
+{ "type": "RENAME_CHANNEL_REQUEST", "data": { "channelId": 1, "name": "" } }
+{ "type": "DELETE_CHANNEL_REQUEST", "data": { "channelId": 1 } }
+{ "type": "CREATE_DM_REQUEST",      "data": { "targetUsername": "" } }
+{ "type": "CREATE_DM_RESPONSE",     "data": { "success": true, "channelId": 1 } }
+{ "type": "SEARCH_CHANNEL_REQUEST", "data": { "name": "" } }
+{ "type": "SEARCH_CHANNEL_RESPONSE","data": { "success": true, "channelId": 1 } }
 { "type": "SYSTEM_METRICS",         "data": { "cpuPercent": 25.5, "ramPercent": 60.2, "diskPercent": 45.0, "timestamp": 0 } }
 { "type": "SYSTEM_ALERT",           "data": { "message": "", "level": "warning", "metric": "cpu", "value": 85.0, "threshold": 80.0 } }
-{ "type": "AI_REQUEST",             "data": { "prompt": "" } }
-{ "type": "AI_RESPONSE",            "data": { "response": "" } }
-{ "type": "CHANGE_PASSWORD",        "data": { "currentPassword": "", "newPassword": "" } }
+{ "type": "UPDATE_THRESHOLDS",      "data": { "cpuThreshold": 80, "ramThreshold": 90, "diskThreshold": 90 } }
+{ "type": "THRESHOLDS_RESPONSE",    "data": { "cpuThreshold": 80, "ramThreshold": 90, "diskThreshold": 90, "success": true } }
+{ "type": "TEST_ALERT",             "data": {} }
+{ "type": "AI_REQUEST",             "data": { "prompt": "", "history": [{"role": "user", "content": ""}] } }
+{ "type": "AI_RESPONSE",            "data": { "response": "", "error": false } }
+{ "type": "CHANGE_PASSWORD_REQUEST","data": { "currentPassword": "", "newPassword": "" } }
+{ "type": "CHANGE_PASSWORD_RESPONSE","data": { "success": true } }
+{ "type": "ERROR",                  "data": { "message": "" } }
 ```
 
 ## Notas
@@ -243,5 +279,8 @@ Ejecutar siempre desde terminal, no desde el boton Run de VS Code (puede fallar 
 - Para resetear la BD: parar el backend y borrar los archivos `.mv.db` y `.trace.db` de `data/`
 - Los canales privados usan un mapa en memoria para controlar quien recibe mensajes; al reiniciar el servidor los usuarios deben volver a unirse
 - Los archivos se transfieren en base64 por WebSocket; no hay limite configurado en la aplicacion (el limite practico lo impone la RAM disponible)
+- El asistente IA mantiene contexto de los ultimos 12 mensajes de la conversacion
+- Las metricas del sistema se guardan en memoria (ultimas 60 muestras) y se pierden al cerrar el frontend
 
 ---
+
