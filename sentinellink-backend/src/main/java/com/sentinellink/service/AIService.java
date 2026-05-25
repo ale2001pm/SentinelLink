@@ -22,7 +22,7 @@ public class AIService {
     private static final Gson GSON = new Gson();
     private static final String DEFAULT_OLLAMA_MODEL = "llama3.1";
     private static final String DEFAULT_OLLAMA_URL = "http://localhost:11434/api/chat";
-    private static final int REQUEST_TIMEOUT_SECONDS = 30;
+    private static final int REQUEST_TIMEOUT_SECONDS = 120;
 
     private static final Map<String, String> CONFIG = loadEnvFile();
 

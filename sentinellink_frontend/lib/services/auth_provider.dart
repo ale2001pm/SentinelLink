@@ -897,8 +897,12 @@ class AuthProvider extends ChangeNotifier {
   }
 
   List<Map<String, String>> _buildAiHistoryPayload() {
-    final int start = _aiMessages.length > 12 ? _aiMessages.length - 12 : 0;
-    return _aiMessages
+    // Exclude the last element (current user message, just added before this call)
+    final List<AiMessage> history = _aiMessages.length > 1
+        ? _aiMessages.sublist(0, _aiMessages.length - 1)
+        : <AiMessage>[];
+    final int start = history.length > 12 ? history.length - 12 : 0;
+    return history
         .sublist(start)
         .map((AiMessage msg) => <String, String>{'role': msg.role, 'content': msg.content})
         .toList();

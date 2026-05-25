@@ -7,6 +7,8 @@ import jakarta.websocket.Session;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.glassfish.tyrus.server.Server;
 
 public class WebSocketServer {
@@ -18,6 +20,7 @@ public class WebSocketServer {
     private static final ConcurrentHashMap<String, String> SESSION_USERNAMES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, String> SESSION_ROLES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> SESSION_CHANNELS = new ConcurrentHashMap<>();
+    private static final ExecutorService AI_EXECUTOR = Executors.newCachedThreadPool();
     /** Members of private group channels — persists across reconnects within one server run. */
     private static final ConcurrentHashMap<Long, Set<String>> PRIVATE_CHANNEL_MEMBERS = new ConcurrentHashMap<>();
 
@@ -56,6 +59,18 @@ public class WebSocketServer {
 
             if (incoming != null && incoming.getType() == MessageType.JOIN_CHANNEL) {
                 handleJoinChannel(session, incoming);
+                return;
+            }
+
+            // AI requests block for up to 2 minutes while Ollama runs — handle off the WebSocket thread
+            if (incoming != null && incoming.getType() == MessageType.AI_REQUEST) {
+                final Session aiSession = session;
+                final SocketMessage aiIncoming = incoming;
+                final String aiSender = SESSION_USERNAMES.getOrDefault(session.getId(), "");
+                AI_EXECUTOR.submit(() -> {
+                    MessageRouter.RouteResult aiResult = ROUTER.route(aiIncoming, aiSender, SESSION_USERNAMES.values());
+                    sendToSession(aiSession, new SocketMessage(aiResult.getResponseType(), aiResult.getResponseData()));
+                });
                 return;
             }
 
