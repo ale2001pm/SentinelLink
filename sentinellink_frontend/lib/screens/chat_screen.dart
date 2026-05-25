@@ -6,7 +6,6 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -15,6 +14,7 @@ import '../models/chat_message.dart';
 import '../services/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/download_helper.dart';
 import 'ai_screen.dart';
 import 'login_screen.dart';
 import 'monitor_screen.dart';
@@ -352,21 +352,11 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _exportChat(BuildContext context) async {
     final AuthProvider auth = context.read<AuthProvider>();
     try {
-      final String? path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Guardar exportación de chats',
-        fileName: 'sentinellink_chats.txt',
-        allowedExtensions: <String>['txt'],
-        type: FileType.custom,
-      );
-      if (path == null) {
-        if (kIsWeb && mounted) {
-          _showErrorSnackBar(this.context, 'Exportación a archivo no disponible en el navegador');
-        }
-        return;
-      }
-      await auth.exportAllChannelsToTxt(path);
+      final String content = auth.buildExportContent();
+      final String? path = await downloadText('sentinellink_chats.txt', content);
       if (!mounted) return;
-      _showInfoSnackBar(this.context, 'Chats exportados en: $path');
+      _showInfoSnackBar(this.context,
+          path != null ? 'Chats exportados en: $path' : 'Chats exportados correctamente');
     } catch (e) {
       if (!mounted) return;
       _showErrorSnackBar(this.context, 'No se pudo exportar: $e');
@@ -2033,16 +2023,11 @@ class _FileAttachmentCard extends StatelessWidget {
 
   Future<void> _save(BuildContext context) async {
     try {
-      final String? path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Guardar archivo',
-        fileName: fileName,
-      );
-      if (path == null) return;
       final Uint8List bytes = base64Decode(fileBase64);
-      await File(path).writeAsBytes(bytes);
+      final String? path = await downloadBytes(fileName, bytes);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Guardado en: $path'),
+        content: Text(path != null ? 'Guardado en: $path' : 'Archivo descargado'),
         backgroundColor: AppTheme.primaryOrange,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),

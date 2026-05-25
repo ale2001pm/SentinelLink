@@ -37,6 +37,12 @@ dependencies:
   json_serializable: ^6.7.0
   json_annotation: ^4.8.1
 
+  # Web interop (for browser file download)
+  web: ^1.0.0
+
+  # File system paths (Downloads folder on Android)
+  path_provider: ^2.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
